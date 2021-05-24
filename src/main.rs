@@ -6,7 +6,13 @@ use std::io::Write;
 #[tokio::main]
 async fn main() {
     println!("Rei: A Line Mode Gemini Browser");
-    while prompt().await {
+    let mut cont = true;
+    while cont {
+        if let Ok(p) = prompt().await {
+            continue;
+        } else {
+            cont = false;
+        }
     }
 }
 
@@ -34,7 +40,7 @@ async fn page_test() {
 }
 
 // Functions for user interaction.
-async fn prompt() -> bool {
+async fn prompt() -> Result<ParseResponse, String> {
     print!("* ");
     let _ = std::io::stdout().flush();
     let mut response = String::new();
@@ -42,9 +48,12 @@ async fn prompt() -> bool {
     return parse_response(response).await;
 }
 
-async fn parse_response(resp : String) -> bool {
+enum ParseResponse {
+    Document(String),
+}
+async fn parse_response(resp : String) -> Result<ParseResponse, String> {
     if resp.len() < 2 {
-       return false; 
+       return Err("SHORT RESPONSE".to_string()); 
     }
 
     let mut tokens = resp.split(" ");
@@ -53,7 +62,7 @@ async fn parse_response(resp : String) -> bool {
             if let Ok(page) = get_page(url).await {
                 if let Some(body) = page.body {
                     println!("{}", body);
-                    return true;
+                    return Ok(ParseResponse::Document(body));
                 }
             }
         }
@@ -61,5 +70,5 @@ async fn parse_response(resp : String) -> bool {
 
     println!("OH NO YOU GOOFED");
 
-    return false;
+    return Err("Unable to parse response.".to_string());
 }
