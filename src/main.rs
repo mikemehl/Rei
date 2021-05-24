@@ -7,9 +7,17 @@ use std::io::Write;
 async fn main() {
     println!("Rei: A Line Mode Gemini Browser");
     let mut cont = true;
+    let mut buf = PageBuf {
+        lines : Vec::new(),
+        curr_line : 0,
+        url : None,
+    };
+    let mut hist = History {
+        entry : Vec::new(),
+    };
     while cont {
         if let Ok(p) = prompt() {
-            if(execute_command(p).await) {
+            if execute_command(p, &mut buf, &mut hist).await {
                 continue;
             } 
         }     
@@ -17,30 +25,8 @@ async fn main() {
     }
 }
 
-// Functions for handling pages and such.
-async fn get_page(url : &str) -> Result<gemini_fetch::Page, String> {
-    if let Ok(url) = url::Url::parse(url) {
-        if let Ok(page) = gemini_fetch::Page::fetch(&url, None).await {
-            return Ok(page);
-        }
-    }
-    Err("Unable to load url!".to_string())
-}
-
-async fn page_test() {
-    if let Ok(page) = get_page("gemini://flounder.online/").await {
-        println!("PAGE FETCHED");
-        let body = page.body;
-        if let Some(body) = body {
-            println!("{}", body);
-        }
-    } else {
-        println!("OH NOES!");
-    }
-    println!("EXITING.");
-}
-
-// Functions for user interaction.
+/// Functions for user interaction.
+// Prompt for input and return the command.
 fn prompt() -> Result<ParseResponse, String> {
     print!("* ");
     let _ = std::io::stdout().flush();
@@ -49,19 +35,22 @@ fn prompt() -> Result<ParseResponse, String> {
     return  parse_response(response);
 }
 
+// All of the available commands and their associated data.
 enum ParseResponse {
-    Document(String),
     GoUrl(url::Url),
     SearchBackwards(String),
     SearchForwards(String),
+    FollowLink(u32), // Index of link on page.
     GoBack,
     GoForward,
-    Print(u32, u32),
-    Enumerate(u32, u32),
-    Page(u32),
-    History(u32),
+    Print(u32, u32), // Range to print.
+    Enumerate(u32, u32), // Range to enumerate.
+    Page(u32), // Number of lines to page.
+    History(u32), // Number of entries to show.
     Quit,
 }
+
+// Called by prompt to match input to commands.
 fn parse_response(resp : String) -> Result<ParseResponse, String> {
     if resp.len() < 2 {
        return Err("SHORT RESPONSE".to_string()); 
@@ -85,17 +74,44 @@ fn parse_response(resp : String) -> Result<ParseResponse, String> {
     return Err("Unable to parse response.".to_string());
 }
 
-async fn execute_command(cmd : ParseResponse) -> bool {
+// Execute the users passed in command.
+async fn execute_command(cmd : ParseResponse, buf : &mut PageBuf, hist : &mut History) -> bool {
     match cmd {
-        ParseResponse::GoUrl(url) => {
-            if let Ok(page) = gemini_fetch::Page::fetch(&url, None).await {
-                if let Some(body) = page.body {
-                    println!("{}", body);
-                }
+        ParseResponse::GoUrl(url) => { 
+            if let Ok(found) = go_url(url, buf, hist).await {
+                return true; //TODO: If we got false, do something?
             }
+            println!("PAGE FETCH ERROR");
         },
         ParseResponse::Quit => return false,
         _ => println!("NOT YET IMPLEMENTED"),
     }
     return true;
 }
+
+/// Command Implementations
+// Follow the passed in url
+async fn go_url(url : url::Url, buf : &mut PageBuf, hist : &mut History) -> Result<bool, String> {
+    if let Ok(page) = gemini_fetch::Page::fetch(&url, None).await {
+        if let Some(body) = page.body {
+            println!("{}", body);
+            return Ok(true);
+        }
+    }
+    return Err("DANGER".to_string());
+}
+
+/// Structures/functions for representing the current page buffer.
+// TODO
+struct PageBuf {
+    lines : Vec<String>,
+    curr_line : u32,
+    url : Option<url::Url>,
+}
+
+/// Structures/functions for representing history.
+// TODO
+struct History {
+    entry : Vec<url::Url>,
+}
+
