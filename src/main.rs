@@ -8,12 +8,14 @@ async fn main() {
     println!("Rei: A Line Mode Gemini Browser");
     let mut cont = true;
     let mut buf = PageBuf {
+        raw : String::new(),
         lines : Vec::new(),
         curr_line : 0,
         url : None,
     };
     let mut hist = History {
         entry : Vec::new(),
+        curr_entry : 0,
     };
     while cont {
         if let Ok(p) = prompt() {
@@ -28,7 +30,7 @@ async fn main() {
 /// Functions for user interaction.
 // Prompt for input and return the command.
 fn prompt() -> Result<ParseResponse, String> {
-    print!("* ");
+    print!("*");
     let _ = std::io::stdout().flush();
     let mut response = String::new();
     let bytes_read = std::io::stdin().read_line(&mut response).unwrap();
@@ -61,7 +63,10 @@ fn parse_response(resp : String) -> Result<ParseResponse, String> {
     match cmd {
         Some("g") => {
             if let Some(url) = tokens.next() {
-                if let Ok(url) = url::Url::parse(url) {
+                if let Ok(mut url) = url::Url::parse(url) {
+                    if !(url.scheme() == "gemini") {
+                        return Err("Not gemini://...".to_string());
+                    }
                     return Ok(ParseResponse::GoUrl(url));
                 }
             }
@@ -93,6 +98,7 @@ async fn execute_command(cmd : ParseResponse, buf : &mut PageBuf, hist : &mut Hi
 // Follow the passed in url
 async fn go_url(url : url::Url, buf : &mut PageBuf, hist : &mut History) -> Result<bool, String> {
     if let Ok(page) = gemini_fetch::Page::fetch(&url, None).await {
+        println!("{:?}", page);
         if let Some(body) = page.body {
             println!("{}", body);
             return Ok(true);
@@ -104,6 +110,7 @@ async fn go_url(url : url::Url, buf : &mut PageBuf, hist : &mut History) -> Resu
 /// Structures/functions for representing the current page buffer.
 // TODO
 struct PageBuf {
+    raw : String,
     lines : Vec<String>,
     curr_line : u32,
     url : Option<url::Url>,
@@ -113,5 +120,6 @@ struct PageBuf {
 // TODO
 struct History {
     entry : Vec<url::Url>,
+    curr_entry : u32,
 }
 
