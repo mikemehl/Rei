@@ -9,7 +9,7 @@ async fn main() {
     println!("Rei: A Line Mode Gemini Browser");
     let mut cont = true;
     let mut buf = PageBuf {
-        raw : String::new(),
+        page : None,
         lines : Vec::new(),
         curr_line : 0,
         url : None,
@@ -37,7 +37,7 @@ fn prompt() -> Result<ParseResponse, String> {
     print!("*");
     let _ = std::io::stdout().flush();
     let mut response = String::new();
-    let bytes_read = std::io::stdin().read_line(&mut response).unwrap();
+    let _bytes_read = std::io::stdin().read_line(&mut response).unwrap();
     return  parse_response(response);
 }
 
@@ -66,23 +66,8 @@ fn parse_response(resp : String) -> Result<ParseResponse, String> {
     let cmd = tokens.next();
     match cmd {
         Some("g") => {
-            if let Some(mut url) = tokens.next() {
-                let scheme_re = Regex::new(r"^gemini://").unwrap();
-                let mut new_url = "gemini://".to_string();
-                if !scheme_re.is_match(url) {
-                    new_url.push_str(url);
-                    url = &new_url;
-                }
-                match url::Url::parse(url) {
-                    Ok(url) => {
-                        if !(url.scheme() == "gemini") {
-                            return Err("Not gemini://...".to_string());
-                        }
-                        return Ok(ParseResponse::GoUrl(url));
-                    },
-                    Err(e) => return Err("Unable to parse URL.".to_string()),
-
-                }
+            if let Some(url) = tokens.next() {
+                return parse_go_command(url);
             }
         },
         Some("q") => return Ok(ParseResponse::Quit),
@@ -92,12 +77,33 @@ fn parse_response(resp : String) -> Result<ParseResponse, String> {
     return Err("Unable to parse response.".to_string());
 }
 
+fn parse_go_command(mut url : &str) -> Result<ParseResponse, String> {
+    let scheme_re = Regex::new(r"^gemini://").unwrap();
+    let mut new_url = "gemini://".to_string();
+    if !scheme_re.is_match(&url) {
+        new_url.push_str(url);
+        if let Ok(url) = url::Url::parse(&new_url) {
+            return Ok(ParseResponse::GoUrl(url));
+        } else {
+            return Err("Unable to parse URL.".to_string());
+        }
+    } else {
+        if let Ok(url) = url::Url::parse(url) {
+            return Ok(ParseResponse::GoUrl(url));
+        } else {
+            return Err("Unable to parse URL.".to_string());
+        }
+    }
+}
+
 // Execute the users passed in command.
 async fn execute_command(cmd : ParseResponse, buf : &mut PageBuf, hist : &mut History) -> bool {
     match cmd {
         ParseResponse::GoUrl(url) => { 
             match go_url(&url).await {
                 Ok(page) => {
+                    // TODO: Load the buf, don't print!
+                    //       What if it's not text???
                     if let Some(body) = page.body {
                         println!("{}", body);
                     }
@@ -127,10 +133,18 @@ async fn go_url(url : &url::Url) -> Result<Page, String> {
 
 /// Structures/functions for representing the current page buffer.
 // TODO
+
+// TODO: Add more types!
+enum GemTextLine {
+    H1(String),
+    H2(String),
+    H3(String),
+    Link(String, url::Url),
+}
 struct PageBuf {
-    raw : String,
-    lines : Vec<String>,
-    curr_line : u32,
+    page : Option<gemini_fetch::Page>, // The raw page response.
+    lines : Vec<GemTextLine>, // The parsed lines for display.
+    curr_line : usize,
     url : Option<url::Url>,
 }
 
@@ -138,6 +152,6 @@ struct PageBuf {
 // TODO
 struct History {
     entry : Vec<url::Url>,
-    curr_entry : u32,
+    curr_entry : usize,
 }
 
