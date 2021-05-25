@@ -101,14 +101,7 @@ async fn execute_command(cmd : ParseResponse, buf : &mut PageBuf, hist : &mut Hi
 }
 
 /// Command Implementations and Helpers
-// Attempt to fetch a page for the passed in url
-async fn go_url(url : &url::Url) -> Result<Page, String> {
-    if let Ok(page) = gemini_fetch::Page::fetch(&url, None).await {
-        return Ok(page)
-    }
-    return Err("DANGER".to_string());
-}
-
+// Attempt to fetch a page for the passed in url, following redirects.
 async fn go_url_follow_redirects(mut url : url::Url) -> Result<Page, String> {
     let max_redirects : u32 = 5;
     let mut num_redirects : u32 = 0;
@@ -133,7 +126,13 @@ async fn go_url_follow_redirects(mut url : url::Url) -> Result<Page, String> {
     return Err("Exceeded max redirects!".to_string());
 }
 
-// Attempt to follow redirects
+// Attempt to fetch a page.
+async fn go_url(url : &url::Url) -> Result<Page, String> {
+    if let Ok(page) = gemini_fetch::Page::fetch(&url, None).await {
+        return Ok(page)
+    }
+    return Err("Unable to fetch url.".to_string());
+}
 
 /// Structures/functions for representing the current page buffer.
 // TODO
