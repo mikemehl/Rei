@@ -2,6 +2,7 @@ use gemini_fetch::*;
 use url::*;
 use tokio::*;
 use std::io::Write;
+use regex::Regex;
 
 #[tokio::main]
 async fn main() {
@@ -18,11 +19,14 @@ async fn main() {
         curr_entry : 0,
     };
     while cont {
-        if let Ok(p) = prompt() {
-            if execute_command(p, &mut buf, &mut hist).await {
-                continue;
-            } 
-        }     
+        match prompt() {
+            Ok(p) => {
+                if execute_command(p, &mut buf, &mut hist).await {
+                    continue;
+                } 
+            },
+            Err(msg) => println!("{}", msg),
+        }
         cont = false;
     }
 }
@@ -62,19 +66,28 @@ fn parse_response(resp : String) -> Result<ParseResponse, String> {
     let cmd = tokens.next();
     match cmd {
         Some("g") => {
-            if let Some(url) = tokens.next() {
-                if let Ok(url) = url::Url::parse(url) {
-                    if !(url.scheme() == "gemini") {
-                        return Err("Not gemini://...".to_string());
-                    }
-                    return Ok(ParseResponse::GoUrl(url));
+            if let Some(mut url) = tokens.next() {
+                let scheme_re = Regex::new(r"^gemini://").unwrap();
+                let mut new_url = "gemini://".to_string();
+                if !scheme_re.is_match(url) {
+                    new_url.push_str(url);
+                    url = &new_url;
+                }
+                match url::Url::parse(url) {
+                    Ok(url) => {
+                        if !(url.scheme() == "gemini") {
+                            return Err("Not gemini://...".to_string());
+                        }
+                        return Ok(ParseResponse::GoUrl(url));
+                    },
+                    Err(e) => return Err("Unable to parse URL.".to_string()),
+
                 }
             }
         },
         Some("q") => return Ok(ParseResponse::Quit),
         _ => return Err("Unknown command.".to_string()),
     }
-    println!("OH NO YOU GOOFED");
 
     return Err("Unable to parse response.".to_string());
 }
@@ -108,6 +121,9 @@ async fn go_url(url : &url::Url) -> Result<Page, String> {
     }
     return Err("Unable to fetch url.".to_string());
 }
+
+/// Page Display Functions
+// TODO
 
 /// Structures/functions for representing the current page buffer.
 // TODO

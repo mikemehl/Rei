@@ -669,6 +669,7 @@ dependencies = [
  "gemini-feed",
  "gemini-fetch 0.2.1",
  "mio 0.7.11",
+ "regex",
  "rustls 0.19.1",
  "tokio 1.6.0",
  "url",
