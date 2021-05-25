@@ -83,7 +83,7 @@ fn parse_response(resp : String) -> Result<ParseResponse, String> {
 async fn execute_command(cmd : ParseResponse, buf : &mut PageBuf, hist : &mut History) -> bool {
     match cmd {
         ParseResponse::GoUrl(url) => { 
-            match go_url_follow_redirects(url).await {
+            match go_url(&url).await {
                 Ok(page) => {
                     if let Some(body) = page.body {
                         println!("{}", body);
@@ -101,34 +101,9 @@ async fn execute_command(cmd : ParseResponse, buf : &mut PageBuf, hist : &mut Hi
 }
 
 /// Command Implementations and Helpers
-// Attempt to fetch a page for the passed in url, following redirects.
-async fn go_url_follow_redirects(mut url : url::Url) -> Result<Page, String> {
-    let max_redirects : u32 = 5;
-    let mut num_redirects : u32 = 0;
-    while num_redirects < max_redirects {
-        match go_url(&url).await {
-            Ok(page) => {
-                match page.header.status {
-                   Status::Success => return Ok(page),
-                   Status::TemporaryRedirect => {
-                       if let Ok(redirect_url) = Url::parse(&page.header.meta) {
-                           url = redirect_url;
-                           num_redirects += 1;
-                           continue;
-                       }
-                   },
-                   _ => return Err("Unknown status received.".to_string()),
-                }
-            },
-            Err(msg) => println!("{}", msg),
-        }
-    }
-    return Err("Exceeded max redirects!".to_string());
-}
-
 // Attempt to fetch a page.
 async fn go_url(url : &url::Url) -> Result<Page, String> {
-    if let Ok(page) = gemini_fetch::Page::fetch(&url, None).await {
+    if let Ok(page) = gemini_fetch::Page::fetch_and_handle_redirects(&url).await {
         return Ok(page)
     }
     return Err("Unable to fetch url.".to_string());
