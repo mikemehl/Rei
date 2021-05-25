@@ -63,7 +63,7 @@ fn parse_response(resp : String) -> Result<ParseResponse, String> {
     match cmd {
         Some("g") => {
             if let Some(url) = tokens.next() {
-                if let Ok(mut url) = url::Url::parse(url) {
+                if let Ok(url) = url::Url::parse(url) {
                     if !(url.scheme() == "gemini") {
                         return Err("Not gemini://...".to_string());
                     }
@@ -83,10 +83,16 @@ fn parse_response(resp : String) -> Result<ParseResponse, String> {
 async fn execute_command(cmd : ParseResponse, buf : &mut PageBuf, hist : &mut History) -> bool {
     match cmd {
         ParseResponse::GoUrl(url) => { 
-            if let Ok(found) = go_url(url, buf, hist).await {
-                return true; //TODO: If we got false, do something?
+            match go_url_follow_redirects(url).await {
+                Ok(page) => {
+                    if let Some(body) = page.body {
+                        println!("{}", body);
+                    }
+                    return true;
+                },
+                Err(msg) => println!("{}", msg),
+
             }
-            println!("PAGE FETCH ERROR");
         },
         ParseResponse::Quit => return false,
         _ => println!("NOT YET IMPLEMENTED"),
@@ -94,18 +100,40 @@ async fn execute_command(cmd : ParseResponse, buf : &mut PageBuf, hist : &mut Hi
     return true;
 }
 
-/// Command Implementations
-// Follow the passed in url
-async fn go_url(url : url::Url, buf : &mut PageBuf, hist : &mut History) -> Result<bool, String> {
+/// Command Implementations and Helpers
+// Attempt to fetch a page for the passed in url
+async fn go_url(url : &url::Url) -> Result<Page, String> {
     if let Ok(page) = gemini_fetch::Page::fetch(&url, None).await {
-        println!("{:?}", page);
-        if let Some(body) = page.body {
-            println!("{}", body);
-            return Ok(true);
-        }
+        return Ok(page)
     }
     return Err("DANGER".to_string());
 }
+
+async fn go_url_follow_redirects(mut url : url::Url) -> Result<Page, String> {
+    let max_redirects : u32 = 5;
+    let mut num_redirects : u32 = 0;
+    while num_redirects < max_redirects {
+        match go_url(&url).await {
+            Ok(page) => {
+                match page.header.status {
+                   Status::Success => return Ok(page),
+                   Status::TemporaryRedirect => {
+                       if let Ok(redirect_url) = Url::parse(&page.header.meta) {
+                           url = redirect_url;
+                           num_redirects += 1;
+                           continue;
+                       }
+                   },
+                   _ => return Err("Unknown status received.".to_string()),
+                }
+            },
+            Err(msg) => println!("{}", msg),
+        }
+    }
+    return Err("Exceeded max redirects!".to_string());
+}
+
+// Attempt to follow redirects
 
 /// Structures/functions for representing the current page buffer.
 // TODO
