@@ -1,9 +1,9 @@
 use gemini_fetch::*;
+use lazy_static::*;
 use regex::{Regex, RegexSet};
 use std::io::Write;
 use tokio::*;
 use url::*;
-use lazy_static::*;
 
 type StrResult<T> = Result<T, &'static str>;
 
@@ -79,7 +79,9 @@ fn parse_response(resp: String) -> StrResult<ParseResponse> {
     if NUM_REGEX.is_match(&resp) {
         if let Some(num) = NUM_REGEX.captures(&resp) {
             if let Some(num) = num.get(1) {
-                return Ok(ParseResponse::JumpToLine(num.as_str().parse::<isize>().unwrap()));
+                return Ok(ParseResponse::JumpToLine(
+                    num.as_str().parse::<isize>().unwrap(),
+                ));
             }
         }
     }
@@ -90,22 +92,31 @@ fn parse_response(resp: String) -> StrResult<ParseResponse> {
                 let num = num.as_str().parse::<isize>().unwrap();
                 let cmd = cmd.as_str();
                 return Ok(match cmd {
-                    "p" => ParseResponse::Print{use_range: true, start: num, stop: num},
+                    "p" => ParseResponse::Print {
+                        use_range: true,
+                        start: num,
+                        stop: num,
+                    },
                     _ => ParseResponse::Invalid,
-                })
+                });
             }
         }
-
     }
-    
+
     if RANGE_LETTER.is_match(&resp) {
-        if let Some(cmds) = NUM_LETTER_REGEX.captures(&resp) { 
-            if let (Some(num_start), Some(num_end), Some(cmd)) = (cmds.get(1), cmds.get(2), cmds.get(3)) {
+        if let Some(cmds) = NUM_LETTER_REGEX.captures(&resp) {
+            if let (Some(num_start), Some(num_end), Some(cmd)) =
+                (cmds.get(1), cmds.get(2), cmds.get(3))
+            {
                 let num_start = num_start.as_str().parse::<isize>().unwrap();
                 let num_end = num_end.as_str().parse::<isize>().unwrap();
                 let cmd = cmd.as_str();
                 return Ok(match cmd {
-                    "p" => ParseResponse::Print{use_range: true, start: num_start, stop: num_end},
+                    "p" => ParseResponse::Print {
+                        use_range: true,
+                        start: num_start,
+                        stop: num_end,
+                    },
                     _ => ParseResponse::Invalid,
                 });
             }
@@ -117,14 +128,16 @@ fn parse_response(resp: String) -> StrResult<ParseResponse> {
             if let Some(cmd) = cmd.get(1) {
                 let cmd = cmd.as_str();
                 return Ok(match cmd {
-                    "p" => ParseResponse::Print{use_range: false, start: 0, stop: 0},
+                    "p" => ParseResponse::Print {
+                        use_range: false,
+                        start: 0,
+                        stop: 0,
+                    },
                     "q" => ParseResponse::Quit,
                     _ => ParseResponse::Invalid,
                 });
             }
-
         }
-
     }
 
     if LETTER_ARG_REGEX.is_match(&resp) {
@@ -138,7 +151,6 @@ fn parse_response(resp: String) -> StrResult<ParseResponse> {
                 };
             }
         }
-
     }
 
     return Ok(ParseResponse::Invalid);
@@ -180,11 +192,15 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                 Err(msg) => println!("{}", msg),
             }
         }
-        ParseResponse::Print{use_range, start, stop} => {
+        ParseResponse::Print {
+            use_range,
+            start,
+            stop,
+        } => {
             if let Ok(val) = print_with_args(&cmd, buf) {
                 return true;
             }
-        },
+        }
         ParseResponse::Quit => return false,
         ParseResponse::Invalid => println!("?"),
         _ => println!("NOT YET IMPLEMENTED"),
@@ -203,15 +219,18 @@ async fn go_url(url: &url::Url) -> StrResult<Page> {
 
 /// Page Display Functions
 // TODO
-fn print_with_args(cmd : &ParseResponse, buf : &mut PageBuf) -> StrResult<bool>{
-
+fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
     return match cmd {
-        ParseResponse::Print{use_range, start, stop} => {
+        ParseResponse::Print {
+            use_range,
+            start,
+            stop,
+        } => {
             println!("NO PRINTING YET");
             Ok(true)
-        },
+        }
         _ => Err("BAD THINGS HAPPENED"),
-    }
+    };
 }
 
 /// Structures/functions for representing the current page buffer.
