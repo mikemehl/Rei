@@ -1,8 +1,9 @@
 use gemini_fetch::*;
-use regex::Regex;
+use regex::{Regex, RegexSet};
 use std::io::Write;
 use tokio::*;
 use url::*;
+use lazy_static::*;
 
 type StrResult<T> = Result<T, &'static str>;
 
@@ -64,84 +65,82 @@ enum ParseResponse {
     Quit,
 }
 
+// Parse the users command.
 // Called by prompt to match input to commands.
 fn parse_response(resp: String) -> StrResult<ParseResponse> {
-    let mut tokens = resp.split(" ");
-    let cmd = tokens.next();
-    match cmd {
-        Some("g") => {
-            if let Some(url) = tokens.next() {
-                return parse_go_command(url);
-            }
-        }
-        Some("q\n") => return Ok(ParseResponse::Quit),
-        Some("p\n") | Some("\n") => {
-            return Ok(ParseResponse::Print {
-                use_range: false,
-                start: 0,
-                stop: 0,
-            })
-        }
-        Some(a) => return parse_response_with_range(resp),
-        None => return Ok(ParseResponse::Invalid),
+    lazy_static! {
+            static ref NUM_REGEX : regex::Regex = Regex::new(r"^(\d+)\s*$").unwrap();                    // Number only
+            static ref NUM_LETTER_REGEX : regex::Regex = Regex::new(r"^(\d+)([a-z]+)\s*$").unwrap();     // Number and letter
+            static ref RANGE_LETTER : regex::Regex = Regex::new(r"^(\d+),(\d+)([a-z])\s*$").unwrap();    // Range and letter
+            static ref LETTER_REGEX : regex::Regex = Regex::new(r"^([a-z]+)\s*$").unwrap();              // Letter only
+            static ref LETTER_ARG_REGEX : regex::Regex = Regex::new(r"^([a-z])\s([^\s]+)\s*$").unwrap(); // Letter and arg
     }
 
-    return Err("Unable to parse response.");
-}
-
-// If the user specified a range, parse it.
-fn parse_response_with_range(resp: String) -> StrResult<ParseResponse> {
-    if let Ok(range_extract) = Regex::new(r"(\d+),(\d+)([a-zA-z])") {
-        let mut first_num: Option<isize> = None;
-        let mut second_num: Option<isize> = None;
-        let mut range_walker = range_extract.find_iter(&resp);
-        if let Some(first) = range_walker.next() {
-            if let Ok(parse_num) = first.as_str().parse::<isize>() {
-                first_num = Some(parse_num);
-            } else {
-                return Err("Unable to parse ranged command (no numbers).");
+    if NUM_REGEX.is_match(&resp) {
+        if let Some(num) = NUM_REGEX.captures(&resp) {
+            if let Some(num) = num.get(1) {
+                return Ok(ParseResponse::JumpToLine(num.as_str().parse::<isize>().unwrap()));
             }
         }
-
-        if let Some(second) = range_walker.next() {
-            if let Ok(parse_num) = second.as_str().parse::<isize>() {
-                // Ranged command, try to parse.
-                second_num = Some(parse_num);
-                if let Some(command) = range_walker.next() {
-                    match command.as_str() {
-                        "p" => {
-                            return Ok(ParseResponse::Print {
-                                use_range: true,
-                                start: first_num.unwrap(),
-                                stop: second_num.unwrap(),
-                            })
-                        }
-                        _ => return Ok(ParseResponse::Invalid),
-                    }
-                } else {
-                    return Ok(ParseResponse::Invalid);
-                }
-            } else {
-                // Single number command, try to parse.
-                match second.as_str() {
-                    "p" => {
-                        return Ok(ParseResponse::Print {
-                            use_range: true,
-                            start: first_num.unwrap(),
-                            stop: first_num.unwrap(),
-                        })
-                    }
-                    _ => return Ok(ParseResponse::Invalid),
-                }
-            }
-        } else {
-            if let Some(jump_line) = first_num {
-                return Ok(ParseResponse::JumpToLine(jump_line));
-            }
-        }
-    } else {
-        return Err("Allocation failure.");
     }
+
+    if NUM_LETTER_REGEX.is_match(&resp) {
+        if let Some(cmds) = NUM_LETTER_REGEX.captures(&resp) {
+            if let (Some(num), Some(cmd)) = (cmds.get(1), cmds.get(2)) {
+                let num = num.as_str().parse::<isize>().unwrap();
+                let cmd = cmd.as_str();
+                return Ok(match cmd {
+                    "p" => ParseResponse::Print{use_range: true, start: num, stop: num},
+                    _ => ParseResponse::Invalid,
+                })
+            }
+        }
+
+    }
+    
+    if RANGE_LETTER.is_match(&resp) {
+        if let Some(cmds) = NUM_LETTER_REGEX.captures(&resp) { 
+            if let (Some(num_start), Some(num_end), Some(cmd)) = (cmds.get(1), cmds.get(2), cmds.get(3)) {
+                let num_start = num_start.as_str().parse::<isize>().unwrap();
+                let num_end = num_end.as_str().parse::<isize>().unwrap();
+                let cmd = cmd.as_str();
+                return Ok(match cmd {
+                    "p" => ParseResponse::Print{use_range: true, start: num_start, stop: num_end},
+                    _ => ParseResponse::Invalid,
+                });
+            }
+        }
+    }
+
+    if LETTER_REGEX.is_match(&resp) {
+        if let Some(cmd) = LETTER_REGEX.captures(&resp) {
+            if let Some(cmd) = cmd.get(1) {
+                let cmd = cmd.as_str();
+                return Ok(match cmd {
+                    "p" => ParseResponse::Print{use_range: false, start: 0, stop: 0},
+                    "q" => ParseResponse::Quit,
+                    _ => ParseResponse::Invalid,
+                });
+            }
+
+        }
+
+    }
+
+    if LETTER_ARG_REGEX.is_match(&resp) {
+        if let Some(cmd) = LETTER_ARG_REGEX.captures(&resp) {
+            if let (Some(cmd), Some(arg)) = (cmd.get(1), cmd.get(2)) {
+                let cmd = cmd.as_str();
+                let arg = arg.as_str();
+                return match cmd {
+                    "g" => parse_go_command(arg),
+                    _ => Ok(ParseResponse::Invalid),
+                };
+            }
+        }
+
+    }
+
     return Ok(ParseResponse::Invalid);
 }
 
@@ -181,6 +180,11 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                 Err(msg) => println!("{}", msg),
             }
         }
+        ParseResponse::Print{use_range, start, stop} => {
+            if let Ok(val) = print_with_args(&cmd, buf) {
+                return true;
+            }
+        },
         ParseResponse::Quit => return false,
         ParseResponse::Invalid => println!("?"),
         _ => println!("NOT YET IMPLEMENTED"),
@@ -199,6 +203,16 @@ async fn go_url(url: &url::Url) -> StrResult<Page> {
 
 /// Page Display Functions
 // TODO
+fn print_with_args(cmd : &ParseResponse, buf : &mut PageBuf) -> StrResult<bool>{
+
+    return match cmd {
+        ParseResponse::Print{use_range, start, stop} => {
+            println!("NO PRINTING YET");
+            Ok(true)
+        },
+        _ => Err("BAD THINGS HAPPENED"),
+    }
+}
 
 /// Structures/functions for representing the current page buffer.
 // TODO
