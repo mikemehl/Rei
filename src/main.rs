@@ -1,9 +1,9 @@
 use gemini_fetch::*;
 use lazy_static::*;
 use regex::{Regex, RegexSet};
-use std::io::Write;
+use std::{convert::TryInto, io::Write};
 use tokio::*;
-use url::*;
+use url::{form_urlencoded::Parse};
 
 type StrResult<T> = Result<T, &'static str>;
 /// Structures for representing the page buffer and history.
@@ -83,6 +83,7 @@ enum ParseResponse {
     Page(u32),           // Number of lines to page.
     History(u32),        // Number of entries to show.
     Invalid,
+    Empty,
     Quit,
 }
 
@@ -95,6 +96,10 @@ fn parse_response(resp: String) -> StrResult<ParseResponse> {
             static ref RANGE_LETTER : regex::Regex = Regex::new(r"^(\d+),(\d+)([a-z])\s*$").unwrap();    // Range and letter
             static ref LETTER_REGEX : regex::Regex = Regex::new(r"^([a-z]+)\s*$").unwrap();              // Letter only
             static ref LETTER_ARG_REGEX : regex::Regex = Regex::new(r"^([a-z])\s([^\s]+)\s*$").unwrap(); // Letter and arg
+    }
+
+    if resp == "\n" {
+        return Ok(ParseResponse::Empty);
     }
 
     if NUM_REGEX.is_match(&resp) {
@@ -220,6 +225,13 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
             }
         }
         ParseResponse::Quit => return false,
+        ParseResponse::Empty => {
+            let cmd = ParseResponse::Print{use_range: false, start: 0, stop: 0};
+            if let Ok(val) = print_with_args(&cmd, buf) {
+                return true;
+            }
+        }
+
         ParseResponse::Invalid => println!("?"),
         _ => println!("NOT YET IMPLEMENTED"),
     }
@@ -237,13 +249,29 @@ async fn go_url(url: &url::Url) -> StrResult<Page> {
 
 /// Page Display Functions
 // TODO
-fn print_with_args(cmd: &ParseResponse, buf: &PageBuf) -> StrResult<bool> {
+fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
     return match cmd {
         ParseResponse::Print {
             use_range,
             start,
             stop,
         } => {
+            if !use_range {
+                let start : usize = buf.curr_line;
+                if let Some(line) = buf.lines.get(start) {
+                    match line {
+                        GemTextLine::H1(str) => println!("{}", str),
+                        GemTextLine::H2(str) => println!("{}", str),
+                        GemTextLine::H3(str) => println!("{}", str),
+                        GemTextLine::Line(str) => println!("{}", str),
+                        GemTextLine::Link(text, _) => println!("=> {}", text),
+                        _ => return Ok(false),
+                    }
+                    buf.curr_line += 1;
+                    return Ok(true);
+                }
+                return Ok(false);
+            }
             println!("NO PRINTING YET");
             Ok(true)
         }
