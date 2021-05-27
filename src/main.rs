@@ -6,6 +6,27 @@ use tokio::*;
 use url::*;
 
 type StrResult<T> = Result<T, &'static str>;
+/// Structures for representing the page buffer and history.
+// TODO: Add more types!
+enum GemTextLine {
+    H1(String),
+    H2(String),
+    H3(String),
+    Link(String, url::Url),
+    Line(String),
+    Invalid,
+}
+struct PageBuf {
+    page: Option<gemini_fetch::Page>, // The raw page response.
+    lines: Vec<GemTextLine>,          // The parsed lines for display.
+    curr_line: usize,
+    url: Option<url::Url>,
+}
+
+struct History {
+    entry: Vec<url::Url>,
+    curr_entry: usize,
+}
 
 #[tokio::main]
 async fn main() {
@@ -156,7 +177,7 @@ fn parse_response(resp: String) -> StrResult<ParseResponse> {
     return Ok(ParseResponse::Invalid);
 }
 
-fn parse_go_command(mut url: &str) -> StrResult<ParseResponse> {
+fn parse_go_command(url: &str) -> StrResult<ParseResponse> {
     let scheme_re = Regex::new(r"^gemini://").unwrap();
     let mut new_url = "gemini://".to_string();
     if !scheme_re.is_match(&url) {
@@ -179,19 +200,16 @@ fn parse_go_command(mut url: &str) -> StrResult<ParseResponse> {
 // Returns false if the program should terminate.
 async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut History) -> bool {
     match cmd {
-        ParseResponse::GoUrl(url) => {
-            match go_url(&url).await {
-                Ok(page) => {
-                    // TODO: Load the buf, don't print!
-                    //       What if it's not text???
-                    if let Some(body) = page.body {
-                        println!("{}", body);
-                    }
-                    return true;
+        ParseResponse::GoUrl(url) => match go_url(&url).await {
+            Ok(page) => {
+                if page.body.is_some() {
+                    let _ = load_page(&page, buf, hist);
+                    println!("{}", page.body.unwrap().len());
                 }
-                Err(msg) => println!("{}", msg),
+                return true;
             }
-        }
+            Err(msg) => println!("{}", msg),
+        },
         ParseResponse::Print {
             use_range,
             start,
@@ -219,7 +237,7 @@ async fn go_url(url: &url::Url) -> StrResult<Page> {
 
 /// Page Display Functions
 // TODO
-fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
+fn print_with_args(cmd: &ParseResponse, buf: &PageBuf) -> StrResult<bool> {
     return match cmd {
         ParseResponse::Print {
             use_range,
@@ -233,26 +251,70 @@ fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
     };
 }
 
-/// Structures/functions for representing the current page buffer.
-// TODO
-
-// TODO: Add more types!
-enum GemTextLine {
-    H1(String),
-    H2(String),
-    H3(String),
-    Link(String, url::Url),
+/// Functions for representing the page buffer and history.
+fn load_page(raw: &gemini_fetch::Page, buf: &mut PageBuf, hist: &mut History) -> StrResult<bool> {
+    if raw.header.meta == "text/gemini" {
+        if let Some(body) = &raw.body {
+            buf.lines.clear();
+            let mut lines = body.split("\n");
+            while let Some(line) = lines.next() {
+                if line.starts_with("#") {
+                    if let Ok(parsed) = parse_gemtext_header(line) {
+                        buf.lines.push(parsed);
+                    }
+                } else if line.starts_with("=>") {
+                    if let Ok(parsed) = parse_gemtext_link(line) {
+                        buf.lines.push(parsed);
+                    }
+                } else if line.starts_with("```") {
+                    while let Some(line) = lines.next() {
+                        if line.starts_with("```") {
+                            break;
+                        } else {
+                            buf.lines.push(GemTextLine::Line(line.to_string()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(true)
 }
-struct PageBuf {
-    page: Option<gemini_fetch::Page>, // The raw page response.
-    lines: Vec<GemTextLine>,          // The parsed lines for display.
-    curr_line: usize,
-    url: Option<url::Url>,
+
+fn parse_gemtext_header(text: &str) -> StrResult<GemTextLine> {
+    let mut header_count = 0;
+    for c in text.chars() {
+        if c == '#' {
+            header_count += 1;
+        } else if header_count <= 3 {
+            return Ok(match header_count {
+                // TODO: Strip off header signifiers.
+                1 => GemTextLine::H1(text.to_string()),
+                2 => GemTextLine::H2(text.to_string()),
+                3 => GemTextLine::H3(text.to_string()),
+                _ => GemTextLine::Line(text.to_string()),
+            });
+        } else {
+            break;
+        }
+    }
+
+    Err("Unable to parse header.")
 }
 
-/// Structures/functions for representing history.
-// TODO
-struct History {
-    entry: Vec<url::Url>,
-    curr_entry: usize,
+fn parse_gemtext_link(line: &str) -> StrResult<GemTextLine> {
+    let mut components = line.split_ascii_whitespace();
+    components.next();
+    if let Some(url_str) = components.next() {
+        if let Ok(url) = url::Url::parse(url_str) {
+            if let Some(text) = components.next() {
+                return Ok(GemTextLine::Link(text.to_string(), url));
+            } else {
+                return Ok(GemTextLine::Link(url_str.to_string(), url));
+            }
+        } else {
+            return Ok(GemTextLine::Line(components.collect()));
+        }
+    }
+    Err("Unable to parse link.")
 }
