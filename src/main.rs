@@ -28,6 +28,29 @@ struct History {
     curr_entry: usize,
 }
 
+/// Enum representing all of the available commands and their associated data.
+enum ParseResponse {
+    GoUrl(url::Url),
+    SearchBackwards(String),
+    SearchForwards(String),
+    FollowLink(u32), // Index of link on page.
+    JumpToLine(isize),
+    GoBack,
+    GoForward,
+    Print {
+        use_range: bool,
+        start: usize,
+        stop: usize,
+    },
+    Enumerate(u32, u32), // Range to enumerate.
+    Page(u32),           // Number of lines to page.
+    History(u32),        // Number of entries to show.
+    Invalid,
+    Empty,
+    Quit,
+}
+
+/// main()
 #[tokio::main]
 async fn main() {
     println!("Rei: A Line Mode Gemini Browser");
@@ -43,7 +66,7 @@ async fn main() {
         curr_entry: 0,
     };
     while cont {
-        match prompt() {
+        match prompt(&buf) {
             Ok(p) => {
                 if execute_command(p, &mut buf, &mut hist).await {
                     continue;
@@ -57,39 +80,17 @@ async fn main() {
 
 /// Functions for user interaction.
 // Prompt for input and return the command.
-fn prompt() -> StrResult<ParseResponse> {
+fn prompt(buf : &PageBuf) -> StrResult<ParseResponse> {
     print!("*");
     let _ = std::io::stdout().flush();
     let mut response = String::new();
     let _bytes_read = std::io::stdin().read_line(&mut response).unwrap();
-    return parse_response(response);
-}
-
-// All of the available commands and their associated data.
-enum ParseResponse {
-    GoUrl(url::Url),
-    SearchBackwards(String),
-    SearchForwards(String),
-    FollowLink(u32), // Index of link on page.
-    JumpToLine(isize),
-    GoBack,
-    GoForward,
-    Print {
-        use_range: bool,
-        start: isize,
-        stop: isize,
-    },
-    Enumerate(u32, u32), // Range to enumerate.
-    Page(u32),           // Number of lines to page.
-    History(u32),        // Number of entries to show.
-    Invalid,
-    Empty,
-    Quit,
+    return parse_response(response, buf);
 }
 
 // Parse the users command.
 // Called by prompt to match input to commands.
-fn parse_response(resp: String) -> StrResult<ParseResponse> {
+fn parse_response(resp: String, buf : &PageBuf) -> StrResult<ParseResponse> {
     lazy_static! {
             static ref NUM_REGEX : regex::Regex = Regex::new(r"^(\d+)\s*$").unwrap();                    // Number only
             static ref NUM_LETTER_REGEX : regex::Regex = Regex::new(r"^(\d+)([a-z]+)\s*$").unwrap();     // Number and letter
@@ -115,7 +116,7 @@ fn parse_response(resp: String) -> StrResult<ParseResponse> {
     if NUM_LETTER_REGEX.is_match(&resp) {
         if let Some(cmds) = NUM_LETTER_REGEX.captures(&resp) {
             if let (Some(num), Some(cmd)) = (cmds.get(1), cmds.get(2)) {
-                let num = num.as_str().parse::<isize>().unwrap();
+                let num = num.as_str().parse::<usize>().unwrap();
                 let cmd = cmd.as_str();
                 return Ok(match cmd {
                     "p" => ParseResponse::Print {
@@ -134,8 +135,9 @@ fn parse_response(resp: String) -> StrResult<ParseResponse> {
             if let (Some(num_start), Some(num_end), Some(cmd)) =
                 (cmds.get(1), cmds.get(2), cmds.get(3))
             {
-                let num_start = num_start.as_str().parse::<isize>().unwrap();
-                let num_end = num_end.as_str().parse::<isize>().unwrap();
+                // TODO: Make sure our number parsing works here.
+                let num_start = num_start.as_str().parse::<usize>().unwrap();
+                let num_end = num_end.as_str().parse::<usize>().unwrap();
                 let cmd = cmd.as_str();
                 return Ok(match cmd {
                     "p" => ParseResponse::Print {
@@ -155,9 +157,9 @@ fn parse_response(resp: String) -> StrResult<ParseResponse> {
                 let cmd = cmd.as_str();
                 return Ok(match cmd {
                     "p" => ParseResponse::Print {
-                        use_range: false,
-                        start: 0,
-                        stop: 0,
+                        use_range: true,
+                        start: buf.curr_line as usize,
+                        stop: buf.curr_line as usize,
                     },
                     "q" => ParseResponse::Quit,
                     _ => ParseResponse::Invalid,
@@ -201,6 +203,7 @@ fn parse_go_command(url: &str) -> StrResult<ParseResponse> {
     }
 }
 
+/// Command Implementations and Helpers
 // Execute the users passed in command.
 // Returns false if the program should terminate.
 async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut History) -> bool {
@@ -238,7 +241,6 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
     return true;
 }
 
-/// Command Implementations and Helpers
 // Attempt to fetch a page.
 async fn go_url(url: &url::Url) -> StrResult<Page> {
     if let Ok(page) = gemini_fetch::Page::fetch_and_handle_redirects(&url).await {
@@ -247,8 +249,7 @@ async fn go_url(url: &url::Url) -> StrResult<Page> {
     return Err("Unable to fetch url.");
 }
 
-/// Page Display Functions
-// TODO
+// Print part of the page (no line numbers)
 fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
     return match cmd {
         ParseResponse::Print {
@@ -271,6 +272,24 @@ fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
                     return Ok(true);
                 }
                 return Ok(false);
+            } else {
+                let start = *start;
+                let stop = *stop;
+                let print_range = start..=stop;
+                for i in print_range {
+                    if let Some(line) = buf.lines.get(i) {
+                        match line {
+                            GemTextLine::H1(str) => println!("{}", str),
+                            GemTextLine::H2(str) => println!("{}", str),
+                            GemTextLine::H3(str) => println!("{}", str),
+                            GemTextLine::Line(str) => println!("{}", str),
+                            GemTextLine::Link(text, _) => println!("=> {}", text),
+                            _ => return Ok(false),
+                        }
+                    }
+                }
+                buf.curr_line = stop;
+                return Ok(true);
             }
             println!("NO PRINTING YET");
             Ok(true)
