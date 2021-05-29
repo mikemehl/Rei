@@ -94,7 +94,7 @@ fn parse_response(resp: String, buf : &PageBuf) -> StrResult<ParseResponse> {
     lazy_static! {
             static ref NUM_REGEX : regex::Regex = Regex::new(r"^(\d+)\s*$").unwrap();                    // Number only
             static ref NUM_LETTER_REGEX : regex::Regex = Regex::new(r"^(\d+)([a-z]+)\s*$").unwrap();     // Number and letter
-            static ref RANGE_LETTER : regex::Regex = Regex::new(r"^(\d+),(\d+)([a-z])\s*$").unwrap();    // Range and letter
+            static ref RANGE_LETTER : regex::Regex = Regex::new(r"^(\d+),(\d+)([a-z]+)\s*$").unwrap();    // Range and letter
             static ref LETTER_REGEX : regex::Regex = Regex::new(r"^([a-z]+)\s*$").unwrap();              // Letter only
             static ref LETTER_ARG_REGEX : regex::Regex = Regex::new(r"^([a-z])\s([^\s]+)\s*$").unwrap(); // Letter and arg
     }
@@ -131,7 +131,7 @@ fn parse_response(resp: String, buf : &PageBuf) -> StrResult<ParseResponse> {
     }
 
     if RANGE_LETTER.is_match(&resp) {
-        if let Some(cmds) = NUM_LETTER_REGEX.captures(&resp) {
+        if let Some(cmds) = RANGE_LETTER.captures(&resp) {
             if let (Some(num_start), Some(num_end), Some(cmd)) =
                 (cmds.get(1), cmds.get(2), cmds.get(3))
             {
