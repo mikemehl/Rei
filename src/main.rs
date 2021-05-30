@@ -1,7 +1,7 @@
 use gemini_fetch::*;
 use lazy_static::*;
 use regex::{Regex, RegexSet};
-use std::{convert::TryInto, io::Write};
+use std::{convert::TryInto, io::Write, str::FromStr};
 use tokio::*;
 use url::{form_urlencoded::Parse};
 
@@ -12,13 +12,20 @@ enum GemTextLine {
     H1(String),
     H2(String),
     H3(String),
-    Link(String, url::Url),
+    Link(LinkInfo),
     Line(String),
     Invalid,
+}
+
+struct LinkInfo {
+    id: usize,
+    text: String,
+    url: url::Url,
 }
 struct PageBuf {
     page: Option<gemini_fetch::Page>, // The raw page response.
     lines: Vec<GemTextLine>,          // The parsed lines for display.
+    links: Vec<LinkInfo>,
     curr_line: usize,
     url: Option<url::Url>,
 }
@@ -33,7 +40,7 @@ enum ParseResponse {
     GoUrl(url::Url),
     SearchBackwards(String),
     SearchForwards(String),
-    FollowLink(u32), // Index of link on page.
+    FollowLink(usize), // Index of link on page.
     JumpToLine(isize),
     GoBack,
     GoForward,
@@ -42,9 +49,9 @@ enum ParseResponse {
         start: usize,
         stop: usize,
     },
-    Enumerate(u32, u32), // Range to enumerate.
-    Page(u32),           // Number of lines to page.
-    History(u32),        // Number of entries to show.
+    Enumerate(usize, usize), // Range to enumerate.
+    Page(usize),           // Number of lines to page.
+    History(usize),        // Number of entries to show.
     Invalid,
     Empty,
     Quit,
@@ -58,6 +65,7 @@ async fn main() {
     let mut buf = PageBuf {
         page: None,
         lines: Vec::new(),
+        links: Vec::new(),
         curr_line: 0,
         url: None,
     };
@@ -175,6 +183,7 @@ fn parse_response(resp: String, buf : &PageBuf) -> StrResult<ParseResponse> {
                 let arg = arg.as_str();
                 return match cmd {
                     "g" => parse_go_command(arg),
+                    "l" => parse_link_command(arg),
                     _ => Ok(ParseResponse::Invalid),
                 };
             }
@@ -203,6 +212,14 @@ fn parse_go_command(url: &str) -> StrResult<ParseResponse> {
     }
 }
 
+fn parse_link_command(index: &str) -> StrResult<ParseResponse> {
+    Ok(if let Ok(index) = index.parse::<usize>() {
+        ParseResponse::FollowLink(index)
+    } else {
+        ParseResponse::Invalid
+    })
+}
+
 /// Command Implementations and Helpers
 // Execute the users passed in command.
 // Returns false if the program should terminate.
@@ -226,7 +243,20 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
             if let Ok(val) = print_with_args(&cmd, buf) {
                 return true;
             }
-        }
+        },
+        ParseResponse::FollowLink(index) => {
+            if index <= buf.links.len() {
+                let link = &buf.links[index];
+                if let Ok(page) = go_url(&link.url).await {
+                    if page.body.is_some() {
+                        let _ = load_page(&page, buf, hist);
+                        println!("{}", page.body.unwrap().len());
+                    }
+                    return true;
+                }
+            }
+            return true;
+        } 
         ParseResponse::Quit => return false,
         ParseResponse::Empty => {
             let cmd = ParseResponse::Print{use_range: false, start: 0, stop: 0};
@@ -265,7 +295,7 @@ fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
                         GemTextLine::H2(str) => println!("{}", str),
                         GemTextLine::H3(str) => println!("{}", str),
                         GemTextLine::Line(str) => println!("{}", str),
-                        GemTextLine::Link(text, _) => println!("=> {}", text),
+                        GemTextLine::Link(link) => println!("[{}] => {}", link.id, link.text),
                         _ => return Ok(false),
                     }
                     buf.curr_line += 1;
@@ -283,7 +313,7 @@ fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
                             GemTextLine::H2(str) => println!("{}", str),
                             GemTextLine::H3(str) => println!("{}", str),
                             GemTextLine::Line(str) => println!("{}", str),
-                            GemTextLine::Link(text, _) => println!("=> {}", text),
+                            GemTextLine::Link(link) => println!("[{}] => {}", link.id, link.text),
                             _ => return Ok(false),
                         }
                     }
@@ -310,7 +340,7 @@ fn load_page(raw: &gemini_fetch::Page, buf: &mut PageBuf, hist: &mut History) ->
                         buf.lines.push(parsed);
                     }
                 } else if line.starts_with("=>") {
-                    if let Ok(parsed) = parse_gemtext_link(line) {
+                    if let Ok(parsed) = parse_gemtext_link(line, &mut buf.links) {
                         buf.lines.push(parsed);
                     }
                 } else if line.starts_with("```") {
@@ -349,15 +379,20 @@ fn parse_gemtext_header(text: &str) -> StrResult<GemTextLine> {
     Err("Unable to parse header.")
 }
 
-fn parse_gemtext_link(line: &str) -> StrResult<GemTextLine> {
+fn parse_gemtext_link(line: &str, links: &mut Vec<LinkInfo>) -> StrResult<GemTextLine> {
     let mut components = line.split_ascii_whitespace();
     components.next();
     if let Some(url_str) = components.next() {
         if let Ok(url) = url::Url::parse(url_str) {
+            let curr_id = links.len();
             if let Some(text) = components.next() {
-                return Ok(GemTextLine::Link(text.to_string(), url));
+                let link = LinkInfo{id: curr_id, text: text.to_string(), url: url};
+                links.push(link);
+                return Ok(GemTextLine::Link(link));
             } else {
-                return Ok(GemTextLine::Link(url_str.to_string(), url));
+                let link = LinkInfo{id: curr_id, text: url_str.to_string(), url: url};
+                links.push(link);
+                return Ok(GemTextLine::Link(link));
             }
         } else {
             return Ok(GemTextLine::Line(components.collect()));
