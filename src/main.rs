@@ -3,7 +3,7 @@ use lazy_static::*;
 use regex::{Regex, RegexSet};
 use std::{convert::TryInto, io::Write};
 use tokio::*;
-use url::{form_urlencoded::Parse};
+use url::form_urlencoded::Parse;
 
 type StrResult<T> = Result<T, &'static str>;
 /// Structures for representing the page buffer and history.
@@ -80,7 +80,7 @@ async fn main() {
 
 /// Functions for user interaction.
 // Prompt for input and return the command.
-fn prompt(buf : &PageBuf) -> StrResult<ParseResponse> {
+fn prompt(buf: &PageBuf) -> StrResult<ParseResponse> {
     print!("*");
     let _ = std::io::stdout().flush();
     let mut response = String::new();
@@ -90,7 +90,7 @@ fn prompt(buf : &PageBuf) -> StrResult<ParseResponse> {
 
 // Parse the users command.
 // Called by prompt to match input to commands.
-fn parse_response(resp: String, buf : &PageBuf) -> StrResult<ParseResponse> {
+fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
     lazy_static! {
             static ref NUM_REGEX : regex::Regex = Regex::new(r"^(\d+)\s*$").unwrap();                    // Number only
             static ref NUM_LETTER_REGEX : regex::Regex = Regex::new(r"^(\d+)([a-z]+)\s*$").unwrap();     // Number and letter
@@ -229,7 +229,11 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
         }
         ParseResponse::Quit => return false,
         ParseResponse::Empty => {
-            let cmd = ParseResponse::Print{use_range: false, start: 0, stop: 0};
+            let cmd = ParseResponse::Print {
+                use_range: false,
+                start: 0,
+                stop: 0,
+            };
             if let Ok(val) = print_with_args(&cmd, buf) {
                 return true;
             }
@@ -258,7 +262,7 @@ fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
             stop,
         } => {
             if !use_range {
-                let start : usize = buf.curr_line;
+                let start: usize = buf.curr_line;
                 if let Some(line) = buf.lines.get(start) {
                     match line {
                         GemTextLine::H1(str) => println!("{}", str),
@@ -313,6 +317,8 @@ fn load_page(raw: &gemini_fetch::Page, buf: &mut PageBuf, hist: &mut History) ->
                 } else if line.starts_with("=>") {
                     if let Ok(parsed) = parse_gemtext_link(line, &mut link_count) {
                         buf.lines.push(parsed);
+                    } else {
+                        println!("Unable to parse link: {}", line);
                     }
                 } else if line.starts_with("```") {
                     while let Some(line) = lines.next() {
@@ -351,19 +357,39 @@ fn parse_gemtext_header(text: &str) -> StrResult<GemTextLine> {
 }
 
 fn parse_gemtext_link(line: &str, id: &mut usize) -> StrResult<GemTextLine> {
-    let mut components = line.split_ascii_whitespace();
-    components.next();
-    if let Some(url_str) = components.next() {
-        if let Ok(url) = url::Url::parse(url_str) {
-            *id = *id + 1;
-            if let Some(text) = components.next() {
-                return Ok(GemTextLine::Link(*id, text.to_string(), url));
-            } else {
-                return Ok(GemTextLine::Link(*id, url_str.to_string(), url));
+    lazy_static! {
+        static ref WHITESPACE_ONLY: regex::Regex = Regex::new(r"^\s*$").unwrap();
+        static ref LINK_REGEX: regex::Regex = Regex::new(r"^=>\s+([^\s]+)\s+(.+)$").unwrap();
+        static ref URL_REGEX: regex::Regex = Regex::new(r"^=>\s+([^\s]+)\s*$").unwrap();
+    }
+
+    if LINK_REGEX.is_match(line) {
+        if let Some(captures) = LINK_REGEX.captures(line) {
+            if let (Some(url_str), Some(text)) = (captures.get(1), captures.get(2)) {
+                if let Ok(parsed_url) = url::Url::parse(url_str.as_str()) {
+                    *id = *id + 1;
+                    return Ok(GemTextLine::Link(
+                        *id,
+                        text.as_str().to_string(),
+                        parsed_url,
+                    ));
+                }
             }
-        } else {
-            return Ok(GemTextLine::Line(components.collect()));
+        }
+    } else if URL_REGEX.is_match(line) {
+        if let Some(captures) = URL_REGEX.captures(line) {
+            if let Some(url_str) = captures.get(1) {
+                if let Ok(parsed_url) = url::Url::parse(url_str.as_str()) {
+                    *id = *id + 1;
+                    return Ok(GemTextLine::Link(
+                        *id,
+                        url_str.as_str().to_string(),
+                        parsed_url,
+                    ));
+                }
+            }
         }
     }
+
     Err("Unable to parse link.")
 }
