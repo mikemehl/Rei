@@ -12,7 +12,7 @@ enum GemTextLine {
     H1(String),
     H2(String),
     H3(String),
-    Link(String, url::Url),
+    Link(usize, String, url::Url),
     Line(String),
     Invalid,
 }
@@ -265,7 +265,7 @@ fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
                         GemTextLine::H2(str) => println!("{}", str),
                         GemTextLine::H3(str) => println!("{}", str),
                         GemTextLine::Line(str) => println!("{}", str),
-                        GemTextLine::Link(text, _) => println!("=> {}", text),
+                        GemTextLine::Link(id, text, _) => println!("[{}] => {}", id, text),
                         _ => return Ok(false),
                     }
                     buf.curr_line += 1;
@@ -283,7 +283,7 @@ fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
                             GemTextLine::H2(str) => println!("{}", str),
                             GemTextLine::H3(str) => println!("{}", str),
                             GemTextLine::Line(str) => println!("{}", str),
-                            GemTextLine::Link(text, _) => println!("=> {}", text),
+                            GemTextLine::Link(id, text, _) => println!("[{}] => {}", id, text),
                             _ => return Ok(false),
                         }
                     }
@@ -303,6 +303,7 @@ fn load_page(raw: &gemini_fetch::Page, buf: &mut PageBuf, hist: &mut History) ->
     if raw.header.meta == "text/gemini" {
         if let Some(body) = &raw.body {
             buf.lines.clear();
+            let mut link_count: usize = 0;
             let mut lines = body.split("\n");
             while let Some(line) = lines.next() {
                 if line.starts_with("#") {
@@ -310,7 +311,7 @@ fn load_page(raw: &gemini_fetch::Page, buf: &mut PageBuf, hist: &mut History) ->
                         buf.lines.push(parsed);
                     }
                 } else if line.starts_with("=>") {
-                    if let Ok(parsed) = parse_gemtext_link(line) {
+                    if let Ok(parsed) = parse_gemtext_link(line, &mut link_count) {
                         buf.lines.push(parsed);
                     }
                 } else if line.starts_with("```") {
@@ -349,15 +350,16 @@ fn parse_gemtext_header(text: &str) -> StrResult<GemTextLine> {
     Err("Unable to parse header.")
 }
 
-fn parse_gemtext_link(line: &str) -> StrResult<GemTextLine> {
+fn parse_gemtext_link(line: &str, id: &mut usize) -> StrResult<GemTextLine> {
     let mut components = line.split_ascii_whitespace();
     components.next();
     if let Some(url_str) = components.next() {
         if let Ok(url) = url::Url::parse(url_str) {
+            *id = *id + 1;
             if let Some(text) = components.next() {
-                return Ok(GemTextLine::Link(text.to_string(), url));
+                return Ok(GemTextLine::Link(*id, text.to_string(), url));
             } else {
-                return Ok(GemTextLine::Link(url_str.to_string(), url));
+                return Ok(GemTextLine::Link(*id, url_str.to_string(), url));
             }
         } else {
             return Ok(GemTextLine::Line(components.collect()));
