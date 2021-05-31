@@ -247,15 +247,14 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                                     }
                                 }
                                 return true;
-                            },
+                            }
                             Err(msg) => println!("{}", msg),
                         }
                     }
                 }
             }
             return true;
-
-        },
+        }
         ParseResponse::Quit => return false,
         ParseResponse::Empty => {
             let cmd = ParseResponse::Print {
