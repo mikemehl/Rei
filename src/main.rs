@@ -28,6 +28,14 @@ struct History {
     curr_entry: usize,
 }
 
+impl History {
+    pub fn add(self: &mut History, url: &url::Url) {
+        if let Ok(url) = url::Url::parse(url.as_str()) {
+            self.entry.push(url);
+        }
+    }
+}
+
 /// Enum representing all of the available commands and their associated data.
 enum ParseResponse {
     GoUrl(url::Url),
@@ -175,7 +183,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                 let arg = arg.as_str();
                 return match cmd {
                     "g" => parse_go_command(arg),
-                    "f" => parse_link_command(arg),
+                    "l" => parse_link_command(arg),
                     _ => Ok(ParseResponse::Invalid),
                 };
             }
@@ -359,6 +367,7 @@ fn load_page(raw: &gemini_fetch::Page, buf: &mut PageBuf, hist: &mut History) ->
                     }
                 }
             }
+            hist.add(&raw.url);
         }
     } else {
         println!("NOT GEMINI: {}", raw.url.as_str());
