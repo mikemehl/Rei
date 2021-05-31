@@ -33,7 +33,7 @@ enum ParseResponse {
     GoUrl(url::Url),
     SearchBackwards(String),
     SearchForwards(String),
-    FollowLink(u32), // Index of link on page.
+    FollowLink(usize), // Index of link on page.
     JumpToLine(isize),
     GoBack,
     GoForward,
@@ -175,6 +175,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                 let arg = arg.as_str();
                 return match cmd {
                     "g" => parse_go_command(arg),
+                    "f" => parse_link_command(arg),
                     _ => Ok(ParseResponse::Invalid),
                 };
             }
@@ -203,6 +204,13 @@ fn parse_go_command(url: &str) -> StrResult<ParseResponse> {
     }
 }
 
+fn parse_link_command(id: &str) -> StrResult<ParseResponse> {
+    if let Ok(id) = id.parse::<usize>() {
+        return Ok(ParseResponse::FollowLink(id));
+    }
+    Err("Invalid link id.")
+}
+
 /// Command Implementations and Helpers
 // Execute the users passed in command.
 // Returns false if the program should terminate.
@@ -227,6 +235,27 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                 return true;
             }
         }
+        ParseResponse::FollowLink(dest_id) => {
+            for line in &buf.lines {
+                if let GemTextLine::Link(id, _, url) = line {
+                    if *id == dest_id {
+                        match go_url(&url).await {
+                            Ok(page) => {
+                                if page.body.is_some() {
+                                    if let Ok(_) = load_page(&page, buf, hist) {
+                                        println!("{}", page.body.unwrap().len());
+                                    }
+                                }
+                                return true;
+                            },
+                            Err(msg) => println!("{}", msg),
+                        }
+                    }
+                }
+            }
+            return true;
+
+        },
         ParseResponse::Quit => return false,
         ParseResponse::Empty => {
             let cmd = ParseResponse::Print {
@@ -304,11 +333,12 @@ fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
 
 /// Functions for representing the page buffer and history.
 fn load_page(raw: &gemini_fetch::Page, buf: &mut PageBuf, hist: &mut History) -> StrResult<bool> {
-    if raw.header.meta == "text/gemini" {
+    if raw.header.meta.starts_with("text/gemini") {
         if let Some(body) = &raw.body {
             buf.lines.clear();
             let mut link_count: usize = 0;
             let mut lines = body.split("\n");
+            buf.curr_line = 0;
             while let Some(line) = lines.next() {
                 if line.starts_with("#") {
                     if let Ok(parsed) = parse_gemtext_header(line) {
@@ -331,6 +361,10 @@ fn load_page(raw: &gemini_fetch::Page, buf: &mut PageBuf, hist: &mut History) ->
                 }
             }
         }
+    } else {
+        println!("NOT GEMINI: {}", raw.url.as_str());
+        println!("{}", raw.header.meta);
+        return Err("Unable to load page!");
     }
     Ok(true)
 }
