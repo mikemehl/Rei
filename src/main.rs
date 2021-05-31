@@ -42,7 +42,7 @@ enum ParseResponse {
     SearchBackwards(String),
     SearchForwards(String),
     FollowLink(usize), // Index of link on page.
-    JumpToLine(isize),
+    JumpToLine(usize),
     GoBack,
     GoForward,
     Print {
@@ -50,9 +50,13 @@ enum ParseResponse {
         start: usize,
         stop: usize,
     },
-    Enumerate(u32, u32), // Range to enumerate.
-    Page(u32),           // Number of lines to page.
-    History(u32),        // Number of entries to show.
+    Enumerate {
+        use_range: bool,
+        start: usize,
+        stop: usize,
+    },
+    Page(u32),    // Number of lines to page.
+    History(u32), // Number of entries to show.
     Invalid,
     Empty,
     Quit,
@@ -103,7 +107,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
             static ref NUM_REGEX : regex::Regex = Regex::new(r"^(\d+)\s*$").unwrap();                    // Number only
             static ref NUM_LETTER_REGEX : regex::Regex = Regex::new(r"^(\d+)([a-z]+)\s*$").unwrap();     // Number and letter
             static ref RANGE_LETTER : regex::Regex = Regex::new(r"^(\d+),(\d+)([a-z]+)\s*$").unwrap();    // Range and letter
-            static ref LETTER_REGEX : regex::Regex = Regex::new(r"^([a-z]+)\s*$").unwrap();              // Letter only
+            static ref LETTER_REGEX : regex::Regex = Regex::new(r"^([a-z\$]+)\s*$").unwrap();              // Letter only
             static ref LETTER_ARG_REGEX : regex::Regex = Regex::new(r"^([a-z])\s([^\s]+)\s*$").unwrap(); // Letter and arg
     }
 
@@ -115,7 +119,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
         if let Some(num) = NUM_REGEX.captures(&resp) {
             if let Some(num) = num.get(1) {
                 return Ok(ParseResponse::JumpToLine(
-                    num.as_str().parse::<isize>().unwrap(),
+                    num.as_str().parse::<usize>().unwrap(),
                 ));
             }
         }
@@ -128,6 +132,11 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                 let cmd = cmd.as_str();
                 return Ok(match cmd {
                     "p" => ParseResponse::Print {
+                        use_range: true,
+                        start: num,
+                        stop: num,
+                    },
+                    "n" => ParseResponse::Enumerate {
                         use_range: true,
                         start: num,
                         stop: num,
@@ -153,6 +162,11 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                         start: num_start,
                         stop: num_end,
                     },
+                    "n" => ParseResponse::Enumerate {
+                        use_range: true,
+                        start: num_start,
+                        stop: num_end,
+                    },
                     _ => ParseResponse::Invalid,
                 });
             }
@@ -169,7 +183,13 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                         start: buf.curr_line as usize,
                         stop: buf.curr_line as usize,
                     },
+                    "n" => ParseResponse::Enumerate {
+                        use_range: true,
+                        start: buf.curr_line as usize,
+                        stop: buf.curr_line as usize,
+                    },
                     "q" => ParseResponse::Quit,
+                    "$" => ParseResponse::JumpToLine(buf.lines.len()),
                     _ => ParseResponse::Invalid,
                 });
             }
@@ -224,6 +244,17 @@ fn parse_link_command(id: &str) -> StrResult<ParseResponse> {
 // Returns false if the program should terminate.
 async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut History) -> bool {
     match cmd {
+        ParseResponse::JumpToLine(line) => {
+            let line = line - 1;
+            let page_len = buf.lines.len();
+            if line < page_len && line >= 0 {
+                buf.curr_line = line;
+                print_gemtext_line(&buf.lines[buf.curr_line]);
+            } else {
+                println!("?");
+                return true;
+            }
+        }
         ParseResponse::GoUrl(url) => match go_url(&url).await {
             Ok(page) => {
                 if page.body.is_some() {
@@ -235,6 +266,11 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
             Err(msg) => println!("{}", msg),
         },
         ParseResponse::Print {
+            use_range,
+            start,
+            stop,
+        }
+        | ParseResponse::Enumerate {
             use_range,
             start,
             stop,
@@ -296,49 +332,75 @@ fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
             use_range,
             start,
             stop,
+        }
+        | ParseResponse::Enumerate {
+            use_range,
+            start,
+            stop,
         } => {
+            let mut start = start - 1;
+            let mut stop = stop - 1;
+            if start < 0 {
+                start = 0;
+            }
+            if stop < 0 {
+                stop = 0;
+            }
             if !use_range {
                 let start: usize = buf.curr_line;
                 if let Some(line) = buf.lines.get(start) {
-                    match line {
-                        GemTextLine::H1(str) => println!("{}", str),
-                        GemTextLine::H2(str) => println!("{}", str),
-                        GemTextLine::H3(str) => println!("{}", str),
-                        GemTextLine::Line(str) => println!("{}", str),
-                        GemTextLine::Link(id, text, _) => println!("[{}] => {}", id, text),
-                        _ => return Ok(false),
+                    if let ParseResponse::Enumerate { .. } = cmd {
+                        print!("{}\t", start + 1);
                     }
+                    print_gemtext_line(&line);
                     buf.curr_line += 1;
+                    if buf.curr_line >= buf.lines.len() {
+                        buf.curr_line = buf.lines.len() - 1;
+                    }
                     return Ok(true);
                 }
                 return Ok(false);
             } else {
-                let start = *start;
-                let stop = *stop;
+                let mut start = start;
+                let mut stop = stop;
+                if start >= buf.lines.len() {
+                    start = buf.lines.len() - 1;
+                    stop = buf.lines.len();
+                }
+
+                if stop >= buf.lines.len() {
+                    stop = buf.lines.len() - 1;
+                }
                 let print_range = start..=stop;
                 for i in print_range {
+                    if let ParseResponse::Enumerate { .. } = cmd {
+                        print!("{}\t", i + 1);
+                    }
                     if let Some(line) = buf.lines.get(i) {
-                        match line {
-                            GemTextLine::H1(str) => println!("{}", str),
-                            GemTextLine::H2(str) => println!("{}", str),
-                            GemTextLine::H3(str) => println!("{}", str),
-                            GemTextLine::Line(str) => println!("{}", str),
-                            GemTextLine::Link(id, text, _) => println!("[{}] => {}", id, text),
-                            _ => return Ok(false),
-                        }
+                        print_gemtext_line(&line);
                     }
                 }
                 buf.curr_line = stop;
                 return Ok(true);
             }
-            println!("NO PRINTING YET");
             Ok(true)
         }
         _ => Err("BAD THINGS HAPPENED"),
     };
 }
 
-/// Functions for representing the page buffer and history.
+fn print_gemtext_line(line: &GemTextLine) {
+    match line {
+        GemTextLine::H1(str) => println!("{}", str),
+        GemTextLine::H2(str) => println!("{}", str),
+        GemTextLine::H3(str) => println!("{}", str),
+        GemTextLine::Line(str) => println!("{}", str),
+        GemTextLine::Link(id, text, _) => println!("[{}] => {}", id, text),
+        _ => return,
+    }
+}
+
+// Load a fetched page into the PageBuf and history.
 fn load_page(raw: &gemini_fetch::Page, buf: &mut PageBuf, hist: &mut History) -> StrResult<bool> {
     if raw.header.meta.starts_with("text/gemini") {
         if let Some(body) = &raw.body {
@@ -377,6 +439,7 @@ fn load_page(raw: &gemini_fetch::Page, buf: &mut PageBuf, hist: &mut History) ->
     Ok(true)
 }
 
+// Parse a gemtext header (i.e. "#{1,3}")
 fn parse_gemtext_header(text: &str) -> StrResult<GemTextLine> {
     let mut header_count = 0;
     for c in text.chars() {
@@ -398,6 +461,7 @@ fn parse_gemtext_header(text: &str) -> StrResult<GemTextLine> {
     Err("Unable to parse header.")
 }
 
+// Parse a gemtext link (i.e. "=> url [text]")
 fn parse_gemtext_link(line: &str, id: &mut usize) -> StrResult<GemTextLine> {
     lazy_static! {
         static ref WHITESPACE_ONLY: regex::Regex = Regex::new(r"^\s*$").unwrap();
