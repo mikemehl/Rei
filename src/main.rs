@@ -104,9 +104,9 @@ fn prompt(buf: &PageBuf) -> StrResult<ParseResponse> {
 // Called by prompt to match input to commands.
 fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
     lazy_static! {
-            static ref NUM_REGEX : regex::Regex = Regex::new(r"^(\d+)\s*$").unwrap();                    // Number only
+            static ref NUM_REGEX : regex::Regex = Regex::new(r"^(\d+|\$)\s*$").unwrap();                    // Number only
             static ref NUM_LETTER_REGEX : regex::Regex = Regex::new(r"^(\d+)([a-z]+)\s*$").unwrap();     // Number and letter
-            static ref RANGE_LETTER : regex::Regex = Regex::new(r"^(\d+),(\d+)([a-z]+)\s*$").unwrap();    // Range and letter
+            static ref RANGE_LETTER : regex::Regex = Regex::new(r"^(\d+),(\d+|\$)([a-z]+)\s*$").unwrap();    // Range and letter
             static ref LETTER_REGEX : regex::Regex = Regex::new(r"^([a-z\$]+)\s*$").unwrap();              // Letter only
             static ref LETTER_ARG_REGEX : regex::Regex = Regex::new(r"^([a-z])\s([^\s]+)\s*$").unwrap(); // Letter and arg
     }
@@ -118,6 +118,9 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
     if NUM_REGEX.is_match(&resp) {
         if let Some(num) = NUM_REGEX.captures(&resp) {
             if let Some(num) = num.get(1) {
+                if num.as_str() == "$" {
+                    return Ok(ParseResponse::JumpToLine(buf.lines.len()));
+                }
                 return Ok(ParseResponse::JumpToLine(
                     num.as_str().parse::<usize>().unwrap(),
                 ));
@@ -154,7 +157,11 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
             {
                 // TODO: Make sure our number parsing works here.
                 let num_start = num_start.as_str().parse::<usize>().unwrap();
-                let num_end = num_end.as_str().parse::<usize>().unwrap();
+                let num_end = if num_end.as_str() == "$" {
+                    buf.lines.len()
+                } else {
+                    num_end.as_str().parse::<usize>().unwrap()
+                };
                 let cmd = cmd.as_str();
                 return Ok(match cmd {
                     "p" => ParseResponse::Print {
