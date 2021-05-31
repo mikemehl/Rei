@@ -55,7 +55,7 @@ enum ParseResponse {
         start: usize,
         stop: usize,
     },
-    Page(u32),    // Number of lines to page.
+    Page(usize),  // Number of lines to page.
     History(u32), // Number of entries to show.
     Invalid,
     Empty,
@@ -195,6 +195,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                         start: buf.curr_line as usize,
                         stop: buf.curr_line as usize,
                     },
+                    "z" => ParseResponse::Page(24),
                     "q" => ParseResponse::Quit,
                     "$" => ParseResponse::JumpToLine(buf.lines.len()),
                     _ => ParseResponse::Invalid,
@@ -211,6 +212,13 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                 return match cmd {
                     "g" => parse_go_command(arg),
                     "l" => parse_link_command(arg),
+                    "z" => {
+                        if let Ok(size) = arg.parse::<usize>() {
+                            Ok(ParseResponse::Page(size))
+                        } else {
+                            Ok(ParseResponse::Page(24))
+                        }
+                    }
                     _ => Ok(ParseResponse::Invalid),
                 };
             }
@@ -282,6 +290,16 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
             start,
             stop,
         } => {
+            if let Ok(val) = print_with_args(&cmd, buf) {
+                return true;
+            }
+        }
+        ParseResponse::Page(size) => {
+            let cmd = ParseResponse::Print {
+                use_range: true,
+                start: buf.curr_line,
+                stop: buf.curr_line + size,
+            };
             if let Ok(val) = print_with_args(&cmd, buf) {
                 return true;
             }
