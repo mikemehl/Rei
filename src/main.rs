@@ -108,7 +108,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
             static ref NUM_LETTER_REGEX : regex::Regex = Regex::new(r"^([1-9]+)([a-z]+)\s*$").unwrap();     // Number and letter
             static ref RANGE_LETTER : regex::Regex = Regex::new(r"^([1-9]+),([1-9]+|\$)([a-z]+)\s*$").unwrap();    // Range and letter
             static ref LETTER_REGEX : regex::Regex = Regex::new(r"^([a-z\$]+)\s*$").unwrap();              // Letter only
-            static ref LETTER_ARG_REGEX : regex::Regex = Regex::new(r"^([a-z])\s([^\s]+)\s*$").unwrap(); // Letter and arg
+            static ref LETTER_ARG_REGEX : regex::Regex = Regex::new(r"^([a-z])\s*([^\s]+)\s*$").unwrap(); // Letter and arg
     }
 
     if resp == "\n" {
@@ -419,9 +419,9 @@ fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
 
 fn print_gemtext_line(line: &GemTextLine) {
     match line {
-        GemTextLine::H1(str) => println!("{}", str),
-        GemTextLine::H2(str) => println!("{}", str),
-        GemTextLine::H3(str) => println!("{}", str),
+        GemTextLine::H1(str) => println!("\n{}\n", str),
+        GemTextLine::H2(str) => println!("\n{}\n", str),
+        GemTextLine::H3(str) => println!("\n{}\n", str),
         GemTextLine::Line(str) => println!("{}", str),
         GemTextLine::Link(id, text, _) => println!("[{}] => {}", id, text),
         _ => return,
