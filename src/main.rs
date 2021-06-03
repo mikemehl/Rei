@@ -126,7 +126,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                         num - 1
                     } else {
                         0
-                    }
+                    },
                 ));
             }
         }
@@ -495,16 +495,26 @@ fn parse_gemtext_link(line: &str, id: &mut usize) -> StrResult<GemTextLine> {
         static ref WHITESPACE_ONLY: regex::Regex = Regex::new(r"^\s*$").unwrap();
         static ref LINK_REGEX: regex::Regex = Regex::new(r"^=>\s+([^\s]+)\s+(.+)$").unwrap();
         static ref URL_REGEX: regex::Regex = Regex::new(r"^=>\s+([^\s]+)\s*$").unwrap();
+        static ref SCHEME_RE: regex::Regex = Regex::new(r"^gemini://").unwrap();
     }
 
     if LINK_REGEX.is_match(line) {
         if let Some(captures) = LINK_REGEX.captures(line) {
             if let (Some(url_str), Some(text)) = (captures.get(1), captures.get(2)) {
-                if let Ok(parsed_url) = url::Url::parse(url_str.as_str()) {
+                let mut new_url = "gemini://".to_string();
+                if !SCHEME_RE.is_match(url_str.as_str()) {
+                    if url_str.as_str().starts_with("//") {
+                        new_url = "gemini:".to_string();
+                    }
+                    new_url.push_str(url_str.as_str());
+                } else {
+                    new_url = url_str.as_str().to_string();
+                }
+                if let Ok(parsed_url) = url::Url::parse(new_url.as_str()) {
                     *id = *id + 1;
                     return Ok(GemTextLine::Link(
                         *id,
-                        text.as_str().to_string(),
+                        new_url.as_str().to_string(),
                         parsed_url,
                     ));
                 }
@@ -513,11 +523,20 @@ fn parse_gemtext_link(line: &str, id: &mut usize) -> StrResult<GemTextLine> {
     } else if URL_REGEX.is_match(line) {
         if let Some(captures) = URL_REGEX.captures(line) {
             if let Some(url_str) = captures.get(1) {
-                if let Ok(parsed_url) = url::Url::parse(url_str.as_str()) {
+                let mut new_url = "gemini://".to_string();
+                if !SCHEME_RE.is_match(url_str.as_str()) {
+                    if url_str.as_str().starts_with("//") {
+                        new_url = "gemini:".to_string();
+                    }
+                    new_url.push_str(url_str.as_str());
+                } else {
+                    new_url = url_str.as_str().to_string();
+                }
+                if let Ok(parsed_url) = url::Url::parse(new_url.as_str()) {
                     *id = *id + 1;
                     return Ok(GemTextLine::Link(
                         *id,
-                        url_str.as_str().to_string(),
+                        new_url.as_str().to_string(),
                         parsed_url,
                     ));
                 }
