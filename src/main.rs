@@ -104,9 +104,9 @@ fn prompt(buf: &PageBuf) -> StrResult<ParseResponse> {
 // Called by prompt to match input to commands.
 fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
     lazy_static! {
-            static ref NUM_REGEX : regex::Regex = Regex::new(r"^(\d+|\$)\s*$").unwrap();                    // Number only
-            static ref NUM_LETTER_REGEX : regex::Regex = Regex::new(r"^(\d+)([a-z]+)\s*$").unwrap();     // Number and letter
-            static ref RANGE_LETTER : regex::Regex = Regex::new(r"^(\d+),(\d+|\$)([a-z]+)\s*$").unwrap();    // Range and letter
+            static ref NUM_REGEX : regex::Regex = Regex::new(r"^([1-9]+|\$)\s*$").unwrap();                    // Number only
+            static ref NUM_LETTER_REGEX : regex::Regex = Regex::new(r"^([1-9]+)([a-z]+)\s*$").unwrap();     // Number and letter
+            static ref RANGE_LETTER : regex::Regex = Regex::new(r"^([1-9]+),([1-9]+|\$)([a-z]+)\s*$").unwrap();    // Range and letter
             static ref LETTER_REGEX : regex::Regex = Regex::new(r"^([a-z\$]+)\s*$").unwrap();              // Letter only
             static ref LETTER_ARG_REGEX : regex::Regex = Regex::new(r"^([a-z])\s([^\s]+)\s*$").unwrap(); // Letter and arg
     }
@@ -119,10 +119,14 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
         if let Some(num) = NUM_REGEX.captures(&resp) {
             if let Some(num) = num.get(1) {
                 if num.as_str() == "$" {
-                    return Ok(ParseResponse::JumpToLine(buf.lines.len()));
+                    return Ok(ParseResponse::JumpToLine(buf.lines.len() - 1));
                 }
                 return Ok(ParseResponse::JumpToLine(
-                    num.as_str().parse::<usize>().unwrap(),
+                    if let Ok(num) = num.as_str().parse::<usize>() {
+                        num - 1
+                    } else {
+                        0
+                    }
                 ));
             }
         }
@@ -131,7 +135,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
     if NUM_LETTER_REGEX.is_match(&resp) {
         if let Some(cmds) = NUM_LETTER_REGEX.captures(&resp) {
             if let (Some(num), Some(cmd)) = (cmds.get(1), cmds.get(2)) {
-                let num = num.as_str().parse::<usize>().unwrap();
+                let num = num.as_str().parse::<usize>().unwrap() - 1;
                 let cmd = cmd.as_str();
                 return Ok(match cmd {
                     "p" => ParseResponse::Print {
@@ -156,11 +160,11 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                 (cmds.get(1), cmds.get(2), cmds.get(3))
             {
                 // TODO: Make sure our number parsing works here.
-                let num_start = num_start.as_str().parse::<usize>().unwrap();
+                let num_start = num_start.as_str().parse::<usize>().unwrap() - 1;
                 let num_end = if num_end.as_str() == "$" {
                     buf.lines.len()
                 } else {
-                    num_end.as_str().parse::<usize>().unwrap()
+                    num_end.as_str().parse::<usize>().unwrap() - 1
                 };
                 let cmd = cmd.as_str();
                 return Ok(match cmd {
@@ -260,7 +264,6 @@ fn parse_link_command(id: &str) -> StrResult<ParseResponse> {
 async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut History) -> bool {
     match cmd {
         ParseResponse::JumpToLine(line) => {
-            let line = line - 1;
             let page_len = buf.lines.len();
             if line < page_len && line >= 0 {
                 buf.curr_line = line;
@@ -363,8 +366,8 @@ fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
             start,
             stop,
         } => {
-            let mut start = start - 1;
-            let mut stop = stop - 1;
+            let mut start = *start;
+            let mut stop = *stop;
             if start < 0 {
                 start = 0;
             }
