@@ -116,6 +116,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
             static ref RANGE_LETTER : regex::Regex = Regex::new(r"^([1-9]+),([1-9]+|\$)([a-z]+)\s*$").unwrap();    // Range and letter
             static ref LETTER_REGEX : regex::Regex = Regex::new(r"^([a-z\$]+)\s*$").unwrap();              // Letter only
             static ref LETTER_ARG_REGEX : regex::Regex = Regex::new(r"^([a-z])\s*([^\s]+)\s*$").unwrap(); // Letter and arg
+            static ref SEARCH_REGEX : regex::Regex = Regex::new(r"^[/\?]{1}(.*)[/\?]{1}\n$").unwrap();
     }
 
     if resp == "\n" {
@@ -256,6 +257,17 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                     }
                     _ => Ok(ParseResponse::Invalid),
                 };
+            }
+        }
+    }
+
+    if SEARCH_REGEX.is_match(&resp) {
+        if let Some(re) = SEARCH_REGEX.captures(&resp) {
+            if let Some(re) = re.get(1) {
+                if resp.starts_with("/") {
+                    return Ok(ParseResponse::SearchForwards(re.as_str().to_string()));
+                }
+                return Ok(ParseResponse::SearchBackwards(re.as_str().to_string()));
             }
         }
     }
@@ -433,6 +445,48 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                     }
                 }
             }
+        }
+        ParseResponse::SearchForwards(re) => {
+            if let Ok(re) = regex::Regex::new(re.as_str()) {
+                for i in buf.curr_line..(buf.lines.len() - 1) {
+                    let text = match &buf.lines[i] {
+                        GemTextLine::H1(text)
+                        | GemTextLine::H2(text)
+                        | GemTextLine::H3(text)
+                        | GemTextLine::Line(text) => text,
+                        GemTextLine::Link(_, text, _) => text,
+                        _ => continue,
+                    };
+                    if re.is_match(&text) {
+                        buf.curr_line = i;
+                        print_gemtext_line(&buf.lines[buf.curr_line]);
+                        return true;
+                    }
+                }
+            }
+            println!("?");
+            return true;
+        }
+        ParseResponse::SearchBackwards(re) => {
+            if let Ok(re) = regex::Regex::new(re.as_str()) {
+                for i in buf.curr_line..0 {
+                    let text = match &buf.lines[i] {
+                        GemTextLine::H1(text)
+                        | GemTextLine::H2(text)
+                        | GemTextLine::H3(text)
+                        | GemTextLine::Line(text) => text,
+                        GemTextLine::Link(_, text, _) => text,
+                        _ => continue,
+                    };
+                    if re.is_match(&text) {
+                        buf.curr_line = i;
+                        print_gemtext_line(&buf.lines[buf.curr_line]);
+                        return true;
+                    }
+                }
+            }
+            println!("?");
+            return true;
         }
         ParseResponse::Quit => return false,
         ParseResponse::Empty => {
@@ -615,7 +669,7 @@ fn parse_gemtext_link(line: &str, id: &mut usize) -> StrResult<GemTextLine> {
         if let Some(captures) = LINK_REGEX.captures(line) {
             if let (Some(url_str), Some(text)) = (captures.get(1), captures.get(2)) {
                 let mut new_url = "gemini://".to_string();
-                if !SCHEME_RE.is_match(url_str.as_str()) {
+                if !SCHEME_RE.is_match(url_str.as_str()) && !url_str.as_str().starts_with("http:") {
                     if url_str.as_str().starts_with("//") {
                         new_url = "gemini:".to_string();
                     }
@@ -637,7 +691,7 @@ fn parse_gemtext_link(line: &str, id: &mut usize) -> StrResult<GemTextLine> {
         if let Some(captures) = URL_REGEX.captures(line) {
             if let Some(url_str) = captures.get(1) {
                 let mut new_url = "gemini://".to_string();
-                if !SCHEME_RE.is_match(url_str.as_str()) {
+                if !SCHEME_RE.is_match(url_str.as_str()) && !url_str.as_str().starts_with("http:") {
                     if url_str.as_str().starts_with("//") {
                         new_url = "gemini:".to_string();
                     }
