@@ -43,8 +43,8 @@ enum ParseResponse {
     SearchForwards(String),
     FollowLink(usize), // Index of link on page.
     JumpToLine(usize),
-    GoBack,
-    GoForward,
+    GoBack(usize),
+    GoForward(usize),
     Print {
         use_range: bool,
         start: usize,
@@ -202,6 +202,8 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                     "z" => ParseResponse::Page(24),
                     "q" => ParseResponse::Quit,
                     "$" => ParseResponse::JumpToLine(buf.lines.len()),
+                    "b" => ParseResponse::GoBack(1),
+                    "f" => ParseResponse::GoForward(1),
                     _ => ParseResponse::Invalid,
                 });
             }
@@ -222,7 +224,21 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                         } else {
                             Ok(ParseResponse::Page(24))
                         }
-                    }
+                    },
+                    "b" => {
+                        if let Ok(depth) = arg.parse::<usize>() {
+                            Ok(ParseResponse::GoBack(depth))
+                        } else {
+                            Ok(ParseResponse::GoBack(1))
+                        }
+                    },
+                    "f" => {
+                        if let Ok(depth) = arg.parse::<usize>() {
+                            Ok(ParseResponse::GoForward(depth))
+                        } else {
+                            Ok(ParseResponse::GoForward(1))
+                        }
+                    },
                     _ => Ok(ParseResponse::Invalid),
                 };
             }
@@ -326,7 +342,29 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                 }
             }
             return true;
-        }
+        },
+        ParseResponse::GoBack(mut depth) => {
+           if depth < 1 {depth = 1;} 
+           if hist.entry.is_empty() {
+               return true;
+           }
+           if hist.entry.len() == 1 || hist.curr_entry == 0 {
+               return true;
+           }
+           hist.curr_entry = hist.curr_entry - 1;
+           let url: &url::Url = &hist.entry[hist.curr_entry];
+           match go_url(&url).await {
+                Ok(page) => {
+                    if page.body.is_some() {
+                        if let Ok(_) = load_page(&page, buf, hist) {
+                            println!("{}", page.body.unwrap().len());
+                        }
+                    }
+                    return true;
+                }
+                Err(msg) => println!("{}", msg),
+           }
+        },
         ParseResponse::Quit => return false,
         ParseResponse::Empty => {
             let cmd = ParseResponse::Print {
