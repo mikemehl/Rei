@@ -516,6 +516,9 @@ fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
             start,
             stop,
         } => {
+            if buf.lines.is_empty() {
+                return Ok(true);
+            }
             let start = *start;
             let stop = *stop;
             if !use_range {
