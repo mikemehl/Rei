@@ -1,9 +1,7 @@
 use gemini_fetch::*;
 use lazy_static::*;
-use regex::{Regex, RegexSet};
+use regex::Regex;
 use std::{convert::TryInto, io::Write};
-use tokio::*;
-use url::form_urlencoded::Parse;
 
 type StrResult<T> = Result<T, &'static str>;
 /// Structures for representing the page buffer and history.
@@ -14,13 +12,12 @@ enum GemTextLine {
     H3(String),
     Link(usize, String, url::Url),
     Line(String),
-    Invalid,
 }
 struct PageBuf {
-    page: Option<gemini_fetch::Page>, // The raw page response.
-    lines: Vec<GemTextLine>,          // The parsed lines for display.
+    //page: Option<gemini_fetch::Page>, // The raw page response.
+    lines: Vec<GemTextLine>, // The parsed lines for display.
     curr_line: usize,
-    url: Option<url::Url>,
+    //url: Option<url::Url>,
 }
 
 struct History {
@@ -75,10 +72,8 @@ async fn main() {
     println!("Rei: A Line Mode Gemini Browser");
     let mut cont = true;
     let mut buf = PageBuf {
-        page: None,
         lines: Vec::new(),
         curr_line: 0,
-        url: None,
     };
     let mut hist = History {
         entry: Vec::new(),
@@ -285,12 +280,10 @@ fn parse_go_command(url: &str) -> StrResult<ParseResponse> {
         } else {
             return Err("Unable to parse URL.");
         }
+    } else if let Ok(url) = url::Url::parse(url) {
+        return Ok(ParseResponse::GoUrl(url));
     } else {
-        if let Ok(url) = url::Url::parse(url) {
-            return Ok(ParseResponse::GoUrl(url));
-        } else {
-            return Err("Unable to parse URL.");
-        }
+        return Err("Unable to parse URL.");
     }
 }
 
@@ -308,7 +301,7 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
     match cmd {
         ParseResponse::JumpToLine(line) => {
             let page_len = buf.lines.len();
-            if line < page_len && line >= 0 {
+            if line < page_len {
                 buf.curr_line = line;
                 print_gemtext_line(&buf.lines[buf.curr_line]);
             } else {
@@ -327,16 +320,16 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
             Err(msg) => println!("{}", msg),
         },
         ParseResponse::Print {
-            use_range,
-            start,
-            stop,
+            use_range: _,
+            start: _,
+            stop: _,
         }
         | ParseResponse::Enumerate {
-            use_range,
-            start,
-            stop,
+            use_range: _,
+            start: _,
+            stop: _,
         } => {
-            if let Ok(val) = print_with_args(&cmd, buf) {
+            if let Ok(_) = print_with_args(&cmd, buf) {
                 return true;
             }
         }
@@ -346,7 +339,7 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                 start: buf.curr_line,
                 stop: buf.curr_line + size,
             };
-            if let Ok(val) = print_with_args(&cmd, buf) {
+            if let Ok(_) = print_with_args(&cmd, buf) {
                 return true;
             }
         }
@@ -455,7 +448,6 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                         | GemTextLine::H3(text)
                         | GemTextLine::Line(text) => text,
                         GemTextLine::Link(_, text, _) => text,
-                        _ => continue,
                     };
                     if re.is_match(&text) {
                         buf.curr_line = i;
@@ -476,7 +468,6 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                         | GemTextLine::H3(text)
                         | GemTextLine::Line(text) => text,
                         GemTextLine::Link(_, text, _) => text,
-                        _ => continue,
                     };
                     if re.is_match(&text) {
                         buf.curr_line = i;
@@ -495,12 +486,11 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                 start: 0,
                 stop: 0,
             };
-            if let Ok(val) = print_with_args(&cmd, buf) {
+            if let Ok(_) = print_with_args(&cmd, buf) {
                 return true;
             }
         }
         ParseResponse::Invalid => println!("?"),
-        _ => println!("NOT YET IMPLEMENTED"),
     }
     return true;
 }
@@ -526,14 +516,8 @@ fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
             start,
             stop,
         } => {
-            let mut start = *start;
-            let mut stop = *stop;
-            if start < 0 {
-                start = 0;
-            }
-            if stop < 0 {
-                stop = 0;
-            }
+            let start = *start;
+            let stop = *stop;
             if !use_range {
                 let start: usize = buf.curr_line;
                 if let Some(line) = buf.lines.get(start) {
@@ -571,7 +555,6 @@ fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
                 buf.curr_line = stop;
                 return Ok(true);
             }
-            Ok(true)
         }
         _ => Err("BAD THINGS HAPPENED"),
     };
@@ -584,7 +567,6 @@ fn print_gemtext_line(line: &GemTextLine) {
         GemTextLine::H3(str) => println!("\n{}\n", str),
         GemTextLine::Line(str) => println!("{}", str),
         GemTextLine::Link(id, text, _) => println!("[{}] => {}", id, text),
-        _ => return,
     }
 }
 
@@ -667,7 +649,7 @@ fn parse_gemtext_link(line: &str, id: &mut usize) -> StrResult<GemTextLine> {
 
     if LINK_REGEX.is_match(line) {
         if let Some(captures) = LINK_REGEX.captures(line) {
-            if let (Some(url_str), Some(text)) = (captures.get(1), captures.get(2)) {
+            if let (Some(url_str), Some(_)) = (captures.get(1), captures.get(2)) {
                 let mut new_url = "gemini://".to_string();
                 if !SCHEME_RE.is_match(url_str.as_str()) && !url_str.as_str().starts_with("http:") {
                     if url_str.as_str().starts_with("//") {
