@@ -31,7 +31,13 @@ struct History {
 impl History {
     pub fn add(self: &mut History, url: &url::Url) {
         if let Ok(url) = url::Url::parse(url.as_str()) {
-            self.entry.push(url);
+            self.curr_entry += 1;
+            if self.curr_entry >= self.entry.len() {
+                self.entry.push(url);
+                self.curr_entry = self.entry.len() - 1;
+            } else {
+                self.entry[self.curr_entry] = url;
+            }
         }
     }
 }
@@ -55,8 +61,8 @@ enum ParseResponse {
         start: usize,
         stop: usize,
     },
-    Page(usize),  // Number of lines to page.
-    History(u32), // Number of entries to show.
+    Page(usize),    // Number of lines to page.
+    History(isize), // Number of entries to show (-1 means show all)
     Invalid,
     Empty,
     Quit,
@@ -204,6 +210,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                     "$" => ParseResponse::JumpToLine(buf.lines.len()),
                     "b" => ParseResponse::GoBack(1),
                     "f" => ParseResponse::GoForward(1),
+                    "h" => ParseResponse::History(-1),
                     _ => ParseResponse::Invalid,
                 });
             }
@@ -224,21 +231,28 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                         } else {
                             Ok(ParseResponse::Page(24))
                         }
-                    },
+                    }
                     "b" => {
                         if let Ok(depth) = arg.parse::<usize>() {
                             Ok(ParseResponse::GoBack(depth))
                         } else {
                             Ok(ParseResponse::GoBack(1))
                         }
-                    },
+                    }
                     "f" => {
                         if let Ok(depth) = arg.parse::<usize>() {
                             Ok(ParseResponse::GoForward(depth))
                         } else {
                             Ok(ParseResponse::GoForward(1))
                         }
-                    },
+                    }
+                    "h" => {
+                        if let Ok(depth) = arg.parse::<isize>() {
+                            Ok(ParseResponse::History(depth))
+                        } else {
+                            Ok(ParseResponse::History(-1))
+                        }
+                    }
                     _ => Ok(ParseResponse::Invalid),
                 };
             }
@@ -342,18 +356,20 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                 }
             }
             return true;
-        },
+        }
         ParseResponse::GoBack(mut depth) => {
-           if depth < 1 {depth = 1;} 
-           if hist.entry.is_empty() {
-               return true;
-           }
-           if hist.entry.len() == 1 || hist.curr_entry == 0 {
-               return true;
-           }
-           hist.curr_entry = hist.curr_entry - 1;
-           let url: &url::Url = &hist.entry[hist.curr_entry];
-           match go_url(&url).await {
+            if depth < 1 {
+                depth = 1;
+            }
+            if hist.entry.is_empty() {
+                return true;
+            }
+            if hist.entry.len() == 1 || hist.curr_entry == 0 {
+                return true;
+            }
+            hist.curr_entry = hist.curr_entry - 1;
+            let url: &url::Url = &hist.entry[hist.curr_entry];
+            match go_url(&url).await {
                 Ok(page) => {
                     if page.body.is_some() {
                         if let Ok(_) = load_page(&page, buf, hist) {
@@ -363,8 +379,46 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                     return true;
                 }
                 Err(msg) => println!("{}", msg),
-           }
-        },
+            }
+        }
+        ParseResponse::GoForward(mut depth) => {
+            if depth < 1 {
+                depth = 1;
+            }
+            if hist.entry.is_empty() {
+                return true;
+            }
+            if hist.entry.len() == 1 || hist.curr_entry == hist.entry.len() - 1 {
+                return true;
+            }
+            hist.curr_entry = hist.curr_entry + 1;
+            let url: &url::Url = &hist.entry[hist.curr_entry];
+            match go_url(&url).await {
+                Ok(page) => {
+                    if page.body.is_some() {
+                        if let Ok(_) = load_page(&page, buf, hist) {
+                            println!("{}", page.body.unwrap().len());
+                        }
+                    }
+                    return true;
+                }
+                Err(msg) => println!("{}", msg),
+            }
+        }
+        ParseResponse::History(depth) => {
+            if depth <= 0 {
+                for (i, h) in hist.entry.iter().enumerate() {
+                    println!("{}\t{}", i + 1, h);
+                }
+            } else {
+                for i in 0..depth {
+                    let i: usize = i.try_into().unwrap();
+                    if let Some(h) = hist.entry.get(i) {
+                        println!("{}\t{}", i + 1, h);
+                    }
+                }
+            }
+        }
         ParseResponse::Quit => return false,
         ParseResponse::Empty => {
             let cmd = ParseResponse::Print {
@@ -376,7 +430,6 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                 return true;
             }
         }
-
         ParseResponse::Invalid => println!("?"),
         _ => println!("NOT YET IMPLEMENTED"),
     }
