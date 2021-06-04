@@ -37,6 +37,7 @@ impl History {
                 self.curr_entry = self.entry.len() - 1;
             } else {
                 self.entry[self.curr_entry] = url;
+                self.entry.truncate(self.curr_entry + 1);
             }
         }
     }
@@ -306,7 +307,7 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
         ParseResponse::GoUrl(url) => match go_url(&url).await {
             Ok(page) => {
                 if page.body.is_some() {
-                    let _ = load_page(&page, buf, hist);
+                    let _ = load_page(&page, buf, hist, true);
                     println!("{}", page.body.unwrap().len());
                 }
                 return true;
@@ -344,7 +345,7 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                         match go_url(&url).await {
                             Ok(page) => {
                                 if page.body.is_some() {
-                                    if let Ok(_) = load_page(&page, buf, hist) {
+                                    if let Ok(_) = load_page(&page, buf, hist, true) {
                                         println!("{}", page.body.unwrap().len());
                                     }
                                 }
@@ -367,12 +368,16 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
             if hist.entry.len() == 1 || hist.curr_entry == 0 {
                 return true;
             }
-            hist.curr_entry = hist.curr_entry - 1;
+            if depth > hist.curr_entry {
+                hist.curr_entry = 0;
+            } else {
+                hist.curr_entry = hist.curr_entry - depth;
+            }
             let url: &url::Url = &hist.entry[hist.curr_entry];
             match go_url(&url).await {
                 Ok(page) => {
                     if page.body.is_some() {
-                        if let Ok(_) = load_page(&page, buf, hist) {
+                        if let Ok(_) = load_page(&page, buf, hist, false) {
                             println!("{}", page.body.unwrap().len());
                         }
                     }
@@ -391,12 +396,16 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
             if hist.entry.len() == 1 || hist.curr_entry == hist.entry.len() - 1 {
                 return true;
             }
-            hist.curr_entry = hist.curr_entry + 1;
+            if hist.curr_entry + depth >= hist.entry.len() - 1 {
+                hist.curr_entry = hist.entry.len() - 1;
+            } else {
+                hist.curr_entry = hist.curr_entry + 1;
+            }
             let url: &url::Url = &hist.entry[hist.curr_entry];
             match go_url(&url).await {
                 Ok(page) => {
                     if page.body.is_some() {
-                        if let Ok(_) = load_page(&page, buf, hist) {
+                        if let Ok(_) = load_page(&page, buf, hist, false) {
                             println!("{}", page.body.unwrap().len());
                         }
                     }
@@ -408,12 +417,18 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
         ParseResponse::History(depth) => {
             if depth <= 0 {
                 for (i, h) in hist.entry.iter().enumerate() {
+                    if i == hist.curr_entry {
+                        print!(">");
+                    }
                     println!("{}\t{}", i + 1, h);
                 }
             } else {
                 for i in 0..depth {
                     let i: usize = i.try_into().unwrap();
                     if let Some(h) = hist.entry.get(i) {
+                        if i == hist.curr_entry {
+                            print!(">");
+                        }
                         println!("{}\t{}", i + 1, h);
                     }
                 }
@@ -520,7 +535,12 @@ fn print_gemtext_line(line: &GemTextLine) {
 }
 
 // Load a fetched page into the PageBuf and history.
-fn load_page(raw: &gemini_fetch::Page, buf: &mut PageBuf, hist: &mut History) -> StrResult<bool> {
+fn load_page(
+    raw: &gemini_fetch::Page,
+    buf: &mut PageBuf,
+    hist: &mut History,
+    add_to_hist: bool,
+) -> StrResult<bool> {
     if raw.header.meta.starts_with("text/gemini") {
         if let Some(body) = &raw.body {
             buf.lines.clear();
@@ -548,7 +568,9 @@ fn load_page(raw: &gemini_fetch::Page, buf: &mut PageBuf, hist: &mut History) ->
                     }
                 }
             }
-            hist.add(&raw.url);
+            if add_to_hist {
+                hist.add(&raw.url);
+            }
         }
     } else {
         println!("NOT GEMINI: {}", raw.url.as_str());
