@@ -106,9 +106,9 @@ fn prompt(buf: &PageBuf) -> StrResult<ParseResponse> {
 // Called by prompt to match input to commands.
 fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
     lazy_static! {
-            static ref NUM_REGEX : regex::Regex = Regex::new(r"^([0-9]+|\$)\s*$").unwrap();                    // Number only
-            static ref NUM_LETTER_REGEX : regex::Regex = Regex::new(r"^([0-9]+)([a-z]+)\s*$").unwrap();     // Number and letter
-            static ref RANGE_LETTER : regex::Regex = Regex::new(r"^([0-9]+),([0-9]+|\$)([a-z]+)\s*$").unwrap();    // Range and letter
+            static ref NUM_REGEX : regex::Regex = Regex::new(r"^([\+-]+[0-9]+|[0-9]+|\$)\s*$").unwrap();                    // Number only
+            static ref NUM_LETTER_REGEX : regex::Regex = Regex::new(r"^(%|[\+-]+[0-9]+|[0-9]+)([a-z]+)\s*$").unwrap();     // Number and letter
+            static ref RANGE_LETTER : regex::Regex = Regex::new(r"^([\+-]+[0-9]+|[0-9]+),([\+-]+[0-9]+[0-9]+|\$)([a-z]+)\s*$").unwrap();    // Range and letter
             static ref LETTER_REGEX : regex::Regex = Regex::new(r"^([a-z\$]+)\s*$").unwrap();              // Letter only
             static ref LETTER_ARG_REGEX : regex::Regex = Regex::new(r"^([a-z])\s*([^\s]+)\s*$").unwrap(); // Letter and arg
             static ref SEARCH_REGEX : regex::Regex = Regex::new(r"^[/\?]{1}(.*)[/\?]{1}\n$").unwrap();
@@ -127,6 +127,28 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                 return Ok(ParseResponse::JumpToLine(
                     if let Ok(num) = num.as_str().parse::<usize>() {
                         num - 1
+                    } else if num.as_str().starts_with("+") {
+                        if let Ok(offset) = num.as_str()[1..].parse::<usize>() {
+                            let dest = if buf.curr_line + offset <= buf.lines.len() - 1 {
+                                buf.curr_line + offset
+                            } else {
+                                buf.lines.len() - 1
+                            };
+                            dest
+                        } else {
+                            buf.curr_line
+                        }
+                    } else if num.as_str().starts_with("-") {
+                        if let Ok(offset) = num.as_str()[1..].parse::<usize>() {
+                            let dest = if buf.curr_line as isize - offset as isize >= 0 {
+                                buf.curr_line - offset
+                            } else {
+                                0
+                            };
+                            dest
+                        } else {
+                            buf.curr_line
+                        }
                     } else {
                         0
                     },
@@ -136,6 +158,22 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
     } else if NUM_LETTER_REGEX.is_match(&resp) {
         if let Some(cmds) = NUM_LETTER_REGEX.captures(&resp) {
             if let (Some(num), Some(cmd)) = (cmds.get(1), cmds.get(2)) {
+                if num.as_str().starts_with("%") {
+                    let cmd = cmd.as_str();
+                    return Ok(match cmd {
+                        "p" => ParseResponse::Print {
+                            use_range: true,
+                            start: 0,
+                            stop: buf.lines.len(),
+                        },
+                        "n" => ParseResponse::Enumerate {
+                            use_range: true,
+                            start: 0,
+                            stop: buf.lines.len(),
+                        },
+                        _ => ParseResponse::Invalid,
+                    });
+                }
                 let num = if let Ok(num) = num.as_str().parse::<usize>() {
                     num - 1
                 } else {
