@@ -106,9 +106,9 @@ fn prompt(buf: &PageBuf) -> StrResult<ParseResponse> {
 // Called by prompt to match input to commands.
 fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
     lazy_static! {
-            static ref NUM_REGEX : regex::Regex = Regex::new(r"^([1-9]+|\$)\s*$").unwrap();                    // Number only
-            static ref NUM_LETTER_REGEX : regex::Regex = Regex::new(r"^([1-9]+)([a-z]+)\s*$").unwrap();     // Number and letter
-            static ref RANGE_LETTER : regex::Regex = Regex::new(r"^([1-9]+),([1-9]+|\$)([a-z]+)\s*$").unwrap();    // Range and letter
+            static ref NUM_REGEX : regex::Regex = Regex::new(r"^([0-9]+|\$)\s*$").unwrap();                    // Number only
+            static ref NUM_LETTER_REGEX : regex::Regex = Regex::new(r"^([0-9]+)([a-z]+)\s*$").unwrap();     // Number and letter
+            static ref RANGE_LETTER : regex::Regex = Regex::new(r"^([0-9]+),([0-9]+|\$)([a-z]+)\s*$").unwrap();    // Range and letter
             static ref LETTER_REGEX : regex::Regex = Regex::new(r"^([a-z\$]+)\s*$").unwrap();              // Letter only
             static ref LETTER_ARG_REGEX : regex::Regex = Regex::new(r"^([a-z])\s*([^\s]+)\s*$").unwrap(); // Letter and arg
             static ref SEARCH_REGEX : regex::Regex = Regex::new(r"^[/\?]{1}(.*)[/\?]{1}\n$").unwrap();
@@ -133,46 +133,57 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                 ));
             }
         }
-    }
-
-    if NUM_LETTER_REGEX.is_match(&resp) {
+    } else if NUM_LETTER_REGEX.is_match(&resp) {
         if let Some(cmds) = NUM_LETTER_REGEX.captures(&resp) {
             if let (Some(num), Some(cmd)) = (cmds.get(1), cmds.get(2)) {
-                let num = num.as_str().parse::<usize>().unwrap() - 1;
-                let cmd = cmd.as_str();
-                return Ok(match cmd {
-                    "p" => ParseResponse::Print {
-                        use_range: true,
-                        start: num,
-                        stop: num,
-                    },
-                    "n" => ParseResponse::Enumerate {
-                        use_range: true,
-                        start: num,
-                        stop: num,
-                    },
-                    _ => ParseResponse::Invalid,
-                });
-            }
-        }
-    }
-
-    if RANGE_LETTER.is_match(&resp) {
-        if let Some(cmds) = RANGE_LETTER.captures(&resp) {
-            if let (Some(num_start), Some(num_end), Some(cmd)) =
-                (cmds.get(1), cmds.get(2), cmds.get(3))
-            {
-                // TODO: Make sure our number parsing works here.
-                let num_start = num_start.as_str().parse::<usize>().unwrap() - 1;
-                let num_end = if num_end.as_str() == "$" {
-                    buf.lines.len()
+                let num = if let Ok(num) = num.as_str().parse::<usize>() {
+                    num - 1
                 } else {
-                    num_end.as_str().parse::<usize>().unwrap() - 1
+                    0
                 };
                 let cmd = cmd.as_str();
                 return Ok(match cmd {
                     "p" => ParseResponse::Print {
                         use_range: true,
+                        start: num,
+                        stop: num,
+                    },
+                    "n" => ParseResponse::Enumerate {
+                        use_range: true,
+                        start: num,
+                        stop: num,
+                    },
+                    _ => ParseResponse::Invalid,
+                });
+            }
+        }
+    } else if RANGE_LETTER.is_match(&resp) {
+        if let Some(cmds) = RANGE_LETTER.captures(&resp) {
+            if let (Some(num_start), Some(num_end), Some(cmd)) =
+                (cmds.get(1), cmds.get(2), cmds.get(3))
+            {
+                // TODO: Make sure our number parsing works here.
+                let num_start = if let Ok(num) = num_start.as_str().parse::<usize>() {
+                    num - 1
+                } else {
+                    0
+                };
+                let mut num_end = if num_end.as_str() == "$" {
+                    buf.lines.len() - 1
+                } else {
+                    if let Ok(num) = num_end.as_str().parse::<usize>() {
+                        num - 1
+                    } else {
+                        0
+                    }
+                };
+                if num_end < num_start {
+                    num_end = num_start;
+                }
+                let cmd = cmd.as_str();
+                return Ok(match cmd {
+                    "p" => ParseResponse::Print {
+                        use_range: true,
                         start: num_start,
                         stop: num_end,
                     },
@@ -185,9 +196,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                 });
             }
         }
-    }
-
-    if LETTER_REGEX.is_match(&resp) {
+    } else if LETTER_REGEX.is_match(&resp) {
         if let Some(cmd) = LETTER_REGEX.captures(&resp) {
             if let Some(cmd) = cmd.get(1) {
                 let cmd = cmd.as_str();
@@ -212,9 +221,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                 });
             }
         }
-    }
-
-    if LETTER_ARG_REGEX.is_match(&resp) {
+    } else if LETTER_ARG_REGEX.is_match(&resp) {
         if let Some(cmd) = LETTER_ARG_REGEX.captures(&resp) {
             if let (Some(cmd), Some(arg)) = (cmd.get(1), cmd.get(2)) {
                 let cmd = cmd.as_str();
@@ -254,9 +261,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                 };
             }
         }
-    }
-
-    if SEARCH_REGEX.is_match(&resp) {
+    } else if SEARCH_REGEX.is_match(&resp) {
         if let Some(re) = SEARCH_REGEX.captures(&resp) {
             if let Some(re) = re.get(1) {
                 if resp.starts_with("/") {
@@ -461,7 +466,8 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
         }
         ParseResponse::SearchBackwards(re) => {
             if let Ok(re) = regex::Regex::new(re.as_str()) {
-                for i in buf.curr_line..0 {
+                for i in 0..buf.curr_line {
+                    let i = buf.curr_line - i;
                     let text = match &buf.lines[i] {
                         GemTextLine::H1(text)
                         | GemTextLine::H2(text)
@@ -565,9 +571,9 @@ fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
 
 fn print_gemtext_line(line: &GemTextLine) {
     match line {
-        GemTextLine::H1(str) => println!("\n{}\n", str),
-        GemTextLine::H2(str) => println!("\n{}\n", str),
-        GemTextLine::H3(str) => println!("\n{}\n", str),
+        GemTextLine::H1(str) => println!("{}", str),
+        GemTextLine::H2(str) => println!("{}", str),
+        GemTextLine::H3(str) => println!("{}", str),
         GemTextLine::Line(str) => println!("{}", str),
         GemTextLine::Link(id, text, _) => println!("[{}] => {}", id, text),
     }
@@ -589,7 +595,11 @@ fn load_page(
             while let Some(line) = lines.next() {
                 if line.starts_with("#") {
                     if let Ok(parsed) = parse_gemtext_header(line) {
+                        if buf.lines.len() > 0 {
+                            buf.lines.push(GemTextLine::Line("".to_string()));
+                        }
                         buf.lines.push(parsed);
+                        buf.lines.push(GemTextLine::Line("".to_string()));
                     }
                 } else if line.starts_with("=>") {
                     if let Ok(parsed) = parse_gemtext_link(line, &mut link_count) {
