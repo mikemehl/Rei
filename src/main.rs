@@ -108,7 +108,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
     lazy_static! {
             static ref NUM_REGEX : regex::Regex = Regex::new(r"^([\+-]+[0-9]+|[0-9]+|\$)\s*$").unwrap();                    // Number only
             static ref NUM_LETTER_REGEX : regex::Regex = Regex::new(r"^(%|[\+-]+[0-9]+|[0-9]+)([a-z]+)\s*$").unwrap();     // Number and letter
-            static ref RANGE_LETTER : regex::Regex = Regex::new(r"^([\+-]+[0-9]+|[0-9]+),([\+-]+[0-9]+[0-9]+|\$)([a-z]+)\s*$").unwrap();    // Range and letter
+            static ref RANGE_LETTER : regex::Regex = Regex::new(r"^([\+-]+[0-9]+|[0-9]+|\.),([\+-]+[0-9]+|[0-9]+|\$|\.)([a-z]+)\s*$").unwrap();    // Range and letter
             static ref LETTER_REGEX : regex::Regex = Regex::new(r"^([a-z\$]+)\s*$").unwrap();              // Letter only
             static ref LETTER_ARG_REGEX : regex::Regex = Regex::new(r"^([a-z])\s*([^\s]+)\s*$").unwrap(); // Letter and arg
             static ref SEARCH_REGEX : regex::Regex = Regex::new(r"^[/\?]{1}(.*)[/\?]{1}\n$").unwrap();
@@ -121,38 +121,11 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
     if NUM_REGEX.is_match(&resp) {
         if let Some(num) = NUM_REGEX.captures(&resp) {
             if let Some(num) = num.get(1) {
-                if num.as_str() == "$" {
-                    return Ok(ParseResponse::JumpToLine(buf.lines.len() - 1));
-                }
-                return Ok(ParseResponse::JumpToLine(
-                    if let Ok(num) = num.as_str().parse::<usize>() {
-                        num - 1
-                    } else if num.as_str().starts_with("+") {
-                        if let Ok(offset) = num.as_str()[1..].parse::<usize>() {
-                            let dest = if buf.curr_line + offset <= buf.lines.len() - 1 {
-                                buf.curr_line + offset
-                            } else {
-                                buf.lines.len() - 1
-                            };
-                            dest
-                        } else {
-                            buf.curr_line
-                        }
-                    } else if num.as_str().starts_with("-") {
-                        if let Ok(offset) = num.as_str()[1..].parse::<usize>() {
-                            let dest = if buf.curr_line as isize - offset as isize >= 0 {
-                                buf.curr_line - offset
-                            } else {
-                                0
-                            };
-                            dest
-                        } else {
-                            buf.curr_line
-                        }
-                    } else {
-                        0
-                    },
-                ));
+                return Ok(ParseResponse::JumpToLine(parse_num(
+                    num.as_str(),
+                    buf.lines.len(),
+                    buf.curr_line,
+                )));
             }
         }
     } else if NUM_LETTER_REGEX.is_match(&resp) {
@@ -174,11 +147,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                         _ => ParseResponse::Invalid,
                     });
                 }
-                let num = if let Ok(num) = num.as_str().parse::<usize>() {
-                    num - 1
-                } else {
-                    0
-                };
+                let num = parse_num(num.as_str(), buf.lines.len(), buf.curr_line);
                 let cmd = cmd.as_str();
                 return Ok(match cmd {
                     "p" => ParseResponse::Print {
@@ -200,21 +169,8 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
             if let (Some(num_start), Some(num_end), Some(cmd)) =
                 (cmds.get(1), cmds.get(2), cmds.get(3))
             {
-                // TODO: Make sure our number parsing works here.
-                let num_start = if let Ok(num) = num_start.as_str().parse::<usize>() {
-                    num - 1
-                } else {
-                    0
-                };
-                let mut num_end = if num_end.as_str() == "$" {
-                    buf.lines.len() - 1
-                } else {
-                    if let Ok(num) = num_end.as_str().parse::<usize>() {
-                        num - 1
-                    } else {
-                        0
-                    }
-                };
+                let num_start = parse_num(num_start.as_str(), buf.lines.len(), buf.curr_line);
+                let mut num_end = parse_num(num_end.as_str(), buf.lines.len(), buf.curr_line);
                 if num_end < num_start {
                     num_end = num_start;
                 }
@@ -311,6 +267,43 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
     }
 
     return Ok(ParseResponse::Invalid);
+}
+
+fn parse_num(num: &str, mut page_length: usize, curr_line: usize) -> usize {
+    if page_length < 1 {
+        page_length = 1;
+    }
+    if num == "$" {
+        page_length - 1
+    } else if num == "." {
+        curr_line
+    } else if num.starts_with("+") {
+        if let Ok(offset) = num[1..].parse::<usize>() {
+            let dest = if curr_line + offset <= page_length - 1 {
+                curr_line + offset
+            } else {
+                page_length - 1
+            };
+            dest
+        } else {
+            curr_line
+        }
+    } else if num.starts_with("-") {
+        if let Ok(offset) = num[1..].parse::<usize>() {
+            let dest = if curr_line as isize - offset as isize >= 0 {
+                curr_line - offset
+            } else {
+                0
+            };
+            dest
+        } else {
+            curr_line
+        }
+    } else if let Ok(num) = num.parse::<usize>() {
+        num - 1
+    } else {
+        0
+    }
 }
 
 fn parse_go_command(url: &str) -> StrResult<ParseResponse> {
@@ -745,4 +738,16 @@ fn parse_gemtext_link(line: &str, id: &mut usize) -> StrResult<GemTextLine> {
     }
 
     Err("Unable to parse link.")
+}
+
+#[cfg(test)]
+mod test {
+    use crate::parse_num;
+
+    #[test]
+    fn test_num_parsing() {
+        assert_eq!(parse_num("-5", 100, 50), 45);
+        assert_eq!(parse_num("+5", 100, 50), 55);
+        assert_eq!(parse_num("$", 100, 50), 99);
+    }
 }
