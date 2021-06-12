@@ -61,6 +61,7 @@ enum ParseResponse {
     },
     Page(usize),    // Number of lines to page.
     History(isize), // Number of entries to show (-1 means show all)
+    Clear,
     Invalid,
     Empty,
     Quit,
@@ -212,6 +213,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                     "b" => ParseResponse::GoBack(1),
                     "f" => ParseResponse::GoForward(1),
                     "h" => ParseResponse::History(-1),
+                    "c" => ParseResponse::Clear,
                     _ => ParseResponse::Invalid,
                 });
             }
@@ -516,6 +518,10 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                 }
             }
             println!("?");
+            return true;
+        },
+        ParseResponse::Clear => {
+            print!("{esc}c", esc = 27 as char);
             return true;
         }
         ParseResponse::Quit => return false,
