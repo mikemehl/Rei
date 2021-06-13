@@ -519,7 +519,7 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
             }
             println!("?");
             return true;
-        },
+        }
         ParseResponse::Clear => {
             print!("{esc}c", esc = 27 as char);
             return true;
@@ -654,6 +654,8 @@ fn load_page(
                             buf.lines.push(GemTextLine::Line(line.to_string()));
                         }
                     }
+                } else {
+                    buf.lines.push(GemTextLine::Line(line.to_string()));
                 }
             }
             if add_to_hist {
@@ -707,8 +709,7 @@ fn parse_gemtext_link(line: &str, id: &mut usize, curr_url: &url::Url) -> StrRes
             if let Ok(joined) = curr_url.join(url_str) {
                 new_url = joined.as_str().to_string();
             }
-        }
-        else {
+        } else {
             new_url = url_str.to_string();
         }
 
