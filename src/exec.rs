@@ -214,7 +214,7 @@ async fn go_url(url: &url::Url) -> StrResult<Page> {
     return Err("Unable to fetch url.");
 }
 
-// Print part of the page (no line numbers)
+// Print part of the page
 fn print_with_args(cmd: &ParseResponse, buf: &mut PageBuf) -> StrResult<bool> {
     return match cmd {
         ParseResponse::Print {
