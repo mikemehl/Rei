@@ -101,7 +101,7 @@ fn prompt(buf: &PageBuf) -> StrResult<ParseResponse> {
     let _ = std::io::stdout().flush();
     let mut response = String::new();
     let _bytes_read = std::io::stdin().read_line(&mut response).unwrap();
-    parse_response(response, buf)
+    return parse_response(response, buf);
 }
 
 // Parse the users command.
@@ -133,7 +133,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
     } else if NUM_LETTER_REGEX.is_match(&resp) {
         if let Some(cmds) = NUM_LETTER_REGEX.captures(&resp) {
             if let (Some(num), Some(cmd)) = (cmds.get(1), cmds.get(2)) {
-                if num.as_str().starts_with('%') {
+                if num.as_str().starts_with("%") {
                     let cmd = cmd.as_str();
                     return Ok(match cmd {
                         "p" => ParseResponse::Print {
@@ -261,7 +261,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
     } else if SEARCH_REGEX.is_match(&resp) {
         if let Some(re) = SEARCH_REGEX.captures(&resp) {
             if let Some(re) = re.get(1) {
-                if resp.starts_with('/') {
+                if resp.starts_with("/") {
                     return Ok(ParseResponse::SearchForwards(re.as_str().to_string()));
                 }
                 return Ok(ParseResponse::SearchBackwards(re.as_str().to_string()));
@@ -269,7 +269,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
         }
     }
 
-    Ok(ParseResponse::Invalid)
+    return Ok(ParseResponse::Invalid);
 }
 
 fn parse_num(num: &str, mut page_length: usize, curr_line: usize) -> usize {
@@ -280,23 +280,25 @@ fn parse_num(num: &str, mut page_length: usize, curr_line: usize) -> usize {
         page_length - 1
     } else if num == "." {
         curr_line
-    } else if let Some(stripped) = num.strip_prefix("+") {
-        if let Ok(offset) = stripped.parse::<usize>() {
-            return if curr_line + offset <= page_length - 1 {
+    } else if num.starts_with("+") {
+        if let Ok(offset) = num[1..].parse::<usize>() {
+            let dest = if curr_line + offset <= page_length - 1 {
                 curr_line + offset
             } else {
                 page_length - 1
             };
+            dest
         } else {
             curr_line
         }
-    } else if let Some(stripped) = num.strip_prefix('-') {
-        if let Ok(offset) = stripped.parse::<usize>() {
-            return if curr_line as isize - offset as isize >= 0 {
+    } else if num.starts_with("-") {
+        if let Ok(offset) = num[1..].parse::<usize>() {
+            let dest = if curr_line as isize - offset as isize >= 0 {
                 curr_line - offset
             } else {
                 0
             };
+            dest
         } else {
             curr_line
         }
@@ -308,18 +310,19 @@ fn parse_num(num: &str, mut page_length: usize, curr_line: usize) -> usize {
 }
 
 fn parse_go_command(url: &str) -> StrResult<ParseResponse> {
+    let scheme_re = Regex::new(r"^gemini://").unwrap();
     let mut new_url = "gemini://".to_string();
-    if url.starts_with("gemini://") {
+    if !scheme_re.is_match(&url) {
         new_url.push_str(url);
         if let Ok(url) = url::Url::parse(&new_url) {
-            Ok(ParseResponse::GoUrl(url))
+            return Ok(ParseResponse::GoUrl(url));
         } else {
-            Err("Unable to parse URL.")
+            return Err("Unable to parse URL.");
         }
     } else if let Ok(url) = url::Url::parse(url) {
-        Ok(ParseResponse::GoUrl(url))
+        return Ok(ParseResponse::GoUrl(url));
     } else {
-        Err("Unable to parse URL.")
+        return Err("Unable to parse URL.");
     }
 }
 
@@ -366,7 +369,7 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
             start: _,
             stop: _,
         } => {
-            if print_with_args(&cmd, buf).is_ok() {
+            if let Ok(_) = print_with_args(&cmd, buf) {
                 return true;
             }
         }
@@ -376,7 +379,7 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                 start: buf.curr_line,
                 stop: buf.curr_line + size,
             };
-            if print_with_args(&cmd, buf).is_ok() {
+            if let Ok(_) = print_with_args(&cmd, buf) {
                 return true;
             }
         }
@@ -387,7 +390,7 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                         match go_url(&url).await {
                             Ok(page) => {
                                 if page.body.is_some() {
-                                    if load_page(&page, buf, hist, true).is_ok() {
+                                    if let Ok(_) = load_page(&page, buf, hist, true) {
                                         println!("{}", page.body.unwrap().len());
                                     }
                                 }
@@ -413,13 +416,13 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
             if depth > hist.curr_entry {
                 hist.curr_entry = 0;
             } else {
-                hist.curr_entry -= depth;
+                hist.curr_entry = hist.curr_entry - depth;
             }
             let url: &url::Url = &hist.entry[hist.curr_entry];
             match go_url(&url).await {
                 Ok(page) => {
                     if page.body.is_some() {
-                        if load_page(&page, buf, hist, false).is_ok() {
+                        if let Ok(_) = load_page(&page, buf, hist, false) {
                             println!("{}", page.body.unwrap().len());
                         }
                     }
@@ -441,13 +444,13 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
             if hist.curr_entry + depth >= hist.entry.len() - 1 {
                 hist.curr_entry = hist.entry.len() - 1;
             } else {
-                hist.curr_entry += 1;
+                hist.curr_entry = hist.curr_entry + 1;
             }
             let url: &url::Url = &hist.entry[hist.curr_entry];
             match go_url(&url).await {
                 Ok(page) => {
                     if page.body.is_some() {
-                        if load_page(&page, buf, hist, false).is_ok() {
+                        if let Ok(_) = load_page(&page, buf, hist, false) {
                             println!("{}", page.body.unwrap().len());
                         }
                     }
@@ -528,7 +531,7 @@ async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut Histo
                 start: 0,
                 stop: 0,
             };
-            if print_with_args(&cmd, buf).is_ok() {
+            if let Ok(_) = print_with_args(&cmd, buf) {
                 return true;
             }
         }
@@ -626,12 +629,12 @@ fn load_page(
         if let Some(body) = &raw.body {
             buf.lines.clear();
             let mut link_count: usize = 0;
-            let mut lines = body.split('\n');
+            let mut lines = body.split("\n");
             buf.curr_line = 0;
             while let Some(line) = lines.next() {
-                if line.starts_with('#') {
+                if line.starts_with("#") {
                     if let Ok(parsed) = parse_gemtext_header(line) {
-                        if !buf.lines.is_empty() {
+                        if buf.lines.len() > 0 {
                             buf.lines.push(GemTextLine::Line("".to_string()));
                         }
                         buf.lines.push(parsed);
@@ -699,18 +702,18 @@ fn parse_gemtext_link(line: &str, id: &mut usize, curr_url: &url::Url) -> StrRes
     }
 
     fn fix_url(url_str: &str, curr_url: &url::Url) -> String {
-        let new_url = "gemini://".to_string();
-        return if url_str.starts_with("gemini://") {
-            url_str.to_string()
+        let mut new_url = "gemini://".to_string();
+        if url_str.starts_with("gemini://") {
+            new_url = url_str.to_string();
         } else if !SCHEME_RE.is_match(url_str) {
             if let Ok(joined) = curr_url.join(url_str) {
-                joined.as_str().to_string()
-            } else {
-                new_url
+                new_url = joined.as_str().to_string();
             }
         } else {
-            url_str.to_string()
-        };
+            new_url = url_str.to_string();
+        }
+
+        return new_url;
     }
 
     if LINK_REGEX.is_match(line) {
