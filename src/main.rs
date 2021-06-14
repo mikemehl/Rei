@@ -1,10 +1,13 @@
+use std::collections::HashMap;
 use gemini_fetch::*;
 use lazy_static::*;
 use regex::Regex;
 use std::{convert::TryInto, io::Write};
 mod interface;
 mod exec;
+mod marks;
 
+pub type Bookmarks = HashMap<char, String>; 
 pub type StrResult<T> = Result<T, &'static str>;
 /// Structures for representing the page buffer and history.
 // TODO: Add more types!
