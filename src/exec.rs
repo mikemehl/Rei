@@ -207,7 +207,7 @@ pub async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut H
 }
 
 // Attempt to fetch a page.
-async fn go_url(url: &url::Url) -> StrResult<Page> {
+pub async fn go_url(url: &url::Url) -> StrResult<Page> {
     if let Ok(page) = gemini_fetch::Page::fetch_and_handle_redirects(&url).await {
         return Ok(page);
     }
@@ -285,7 +285,7 @@ fn print_gemtext_line(line: &GemTextLine) {
 }
 
 // Load a fetched page into the PageBuf and history.
-fn load_page(
+pub fn load_page(
     raw: &gemini_fetch::Page,
     buf: &mut PageBuf,
     hist: &mut History,
