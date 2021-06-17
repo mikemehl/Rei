@@ -1,13 +1,13 @@
-use std::collections::HashMap;
 use gemini_fetch::*;
 use lazy_static::*;
 use regex::Regex;
+use std::collections::HashMap;
 use std::{convert::TryInto, io::Write};
-mod interface;
 mod exec;
+mod interface;
 mod marks;
 
-pub type Bookmarks = HashMap<char, String>; 
+pub type Bookmarks = HashMap<char, String>;
 pub type StrResult<T> = Result<T, &'static str>;
 /// Structures for representing the page buffer and history.
 // TODO: Add more types!
@@ -67,6 +67,8 @@ pub enum ParseResponse {
     Page(usize),    // Number of lines to page.
     History(isize), // Number of entries to show (-1 means show all)
     Clear,
+    AddBookmark(char, url::Url),
+    GoBookmark(char),
     Invalid,
     Empty,
     Quit,
@@ -86,10 +88,11 @@ async fn main() {
         entry: Vec::new(),
         curr_entry: 0,
     };
+    let mut marks = marks::load_marks();
     while cont {
         match interface::prompt(&buf) {
             Ok(p) => {
-                if exec::execute_command(p, &mut buf, &mut hist).await {
+                if exec::execute_command(p, &mut buf, &mut hist, &mut marks).await {
                     continue;
                 }
             }

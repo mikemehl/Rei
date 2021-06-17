@@ -1,6 +1,5 @@
 use crate::*;
 
-
 /// Functions for user interaction.
 // Prompt for input and return the command.
 pub fn prompt(buf: &PageBuf) -> StrResult<ParseResponse> {
@@ -160,6 +159,22 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                         } else {
                             Ok(ParseResponse::History(-1))
                         }
+                    }
+                    "m" => {
+                        if let Some(url) = &buf.url {
+                            if let Ok(url) = url::Url::parse(url.as_str()) {
+                                return Ok(ParseResponse::AddBookmark(
+                                    arg.chars().nth(0).unwrap(),
+                                    url,
+                                ));
+                            }
+                            Ok(ParseResponse::Invalid)
+                        } else {
+                            Ok(ParseResponse::Invalid)
+                        }
+                    }
+                    "k" => {
+                        Ok(ParseResponse::GoBookmark(arg.chars().nth(0).unwrap()))
                     }
                     _ => Ok(ParseResponse::Invalid),
                 };
