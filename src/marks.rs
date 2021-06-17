@@ -1,13 +1,18 @@
 use crate::exec::*;
 use crate::*;
 use dirs::home_dir;
+use std::fs::OpenOptions;
 use std::{fs::File, io::Read};
 
 pub fn load_marks() -> Bookmarks {
     let mut map = HashMap::new();
     if let Some(mut marks_dir) = dirs::home_dir() {
         marks_dir.push(".reimarks");
-        if let Ok(mut marks_file) = File::open(marks_dir.as_os_str()) {
+        if let Ok(mut marks_file) = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(marks_dir.as_os_str())
+        {
             let mut buf = String::new();
             marks_file.read_to_string(&mut buf);
             for line in buf.split('\n') {
@@ -23,8 +28,8 @@ pub fn load_marks() -> Bookmarks {
     map
 }
 
-pub fn add_bookmark(mark: char, buf: PageBuf, marks: &mut Bookmarks) -> StrResult<()> {
-    if let Some(url) = buf.url {
+pub fn add_bookmark(mark: char, buf: &mut PageBuf, marks: &mut Bookmarks) -> StrResult<()> {
+    if let Some(url) = &buf.url {
         marks.insert(mark, url.as_str().to_string());
         return Ok(());
     }
@@ -55,8 +60,9 @@ pub async fn go_to_bookmark(
 pub fn save_bookmarks(marks: &Bookmarks) -> StrResult<()> {
     if let Some(mut marks_dir) = dirs::home_dir() {
         marks_dir.push(".reimarks");
-        if let Ok(mut marks_file) = File::open(marks_dir.as_os_str()) {
+        if let Ok(mut marks_file) = OpenOptions::new().write(true).open(marks_dir.as_os_str()) {
             for (k, v) in marks {
+                println!("Saving bookmark {}: {}", k, v);
                 marks_file.write_fmt(format_args!("{} {}\n", k, v));
             }
             return Ok(());

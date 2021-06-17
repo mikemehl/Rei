@@ -67,7 +67,7 @@ pub enum ParseResponse {
     Page(usize),    // Number of lines to page.
     History(isize), // Number of entries to show (-1 means show all)
     Clear,
-    AddBookmark(char, url::Url),
+    AddBookmark(char),
     GoBookmark(char),
     Invalid,
     Empty,
@@ -99,5 +99,10 @@ async fn main() {
             Err(msg) => println!("{}", msg),
         }
         cont = false;
+    }
+    if !marks.is_empty() {
+        if let Err(msg) = marks::save_bookmarks(&marks) {
+            println!("{}", msg);
+        }
     }
 }

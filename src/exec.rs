@@ -2,7 +2,12 @@ use crate::*;
 /// Command Implementations and Helpers
 // Execute the users passed in command.
 // Returns false if the program should terminate.
-pub async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut History, marks: &mut Bookmarks) -> bool {
+pub async fn execute_command(
+    cmd: ParseResponse,
+    buf: &mut PageBuf,
+    hist: &mut History,
+    marks: &mut Bookmarks,
+) -> bool {
     match cmd {
         ParseResponse::JumpToLine(line) => {
             let page_len = buf.lines.len();
@@ -190,12 +195,16 @@ pub async fn execute_command(cmd: ParseResponse, buf: &mut PageBuf, hist: &mut H
             print!("{esc}c", esc = 27 as char);
             return true;
         }
-        ParseResponse::AddBookmark(name, url) => {
-            // TODO
+        ParseResponse::AddBookmark(name) => {
+            if !marks::add_bookmark(name, buf, marks).is_ok() {
+                println!("FAILED TO ADD BOOKMARK"); // TEMP
+            }
             return true;
         }
         ParseResponse::GoBookmark(name) => {
-            // TODO
+            if !marks::go_to_bookmark(name, buf, hist, marks).await.is_ok() {
+                println!("UNABLE TO GO TO BOOKMARK"); // TEMP
+            }
             return true;
         }
         ParseResponse::Quit => return false,

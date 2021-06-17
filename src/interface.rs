@@ -163,19 +163,14 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                     "m" => {
                         if let Some(url) = &buf.url {
                             if let Ok(url) = url::Url::parse(url.as_str()) {
-                                return Ok(ParseResponse::AddBookmark(
-                                    arg.chars().nth(0).unwrap(),
-                                    url,
-                                ));
+                                return Ok(ParseResponse::AddBookmark(arg.chars().nth(0).unwrap()));
                             }
                             Ok(ParseResponse::Invalid)
                         } else {
                             Ok(ParseResponse::Invalid)
                         }
                     }
-                    "k" => {
-                        Ok(ParseResponse::GoBookmark(arg.chars().nth(0).unwrap()))
-                    }
+                    "k" => Ok(ParseResponse::GoBookmark(arg.chars().nth(0).unwrap())),
                     _ => Ok(ParseResponse::Invalid),
                 };
             }
