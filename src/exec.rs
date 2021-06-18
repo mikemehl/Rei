@@ -39,7 +39,7 @@ pub async fn execute_command(
             start: _,
             stop: _,
         } => {
-            if let Ok(_) = print_with_args(&cmd, buf) {
+            if print_with_args(&cmd, buf).is_ok() {
                 return true;
             }
         }
@@ -49,7 +49,7 @@ pub async fn execute_command(
                 start: buf.curr_line,
                 stop: buf.curr_line + size,
             };
-            if let Ok(_) = print_with_args(&cmd, buf) {
+            if print_with_args(&cmd, buf).is_ok() {
                 return true;
             }
         }
@@ -59,10 +59,9 @@ pub async fn execute_command(
                     if *id == dest_id {
                         match go_url(&url).await {
                             Ok(page) => {
-                                if page.body.is_some() {
-                                    if let Ok(_) = load_page(&page, buf, hist, true) {
-                                        println!("{}", page.body.unwrap().len());
-                                    }
+                                if page.body.is_some() && load_page(&page, buf, hist, true).is_ok()
+                                {
+                                    println!("{}", page.body.unwrap().len());
                                 }
                                 return true;
                             }
@@ -86,15 +85,13 @@ pub async fn execute_command(
             if depth > hist.curr_entry {
                 hist.curr_entry = 0;
             } else {
-                hist.curr_entry = hist.curr_entry - depth;
+                hist.curr_entry -= depth;
             }
             let url: &url::Url = &hist.entry[hist.curr_entry];
             match go_url(&url).await {
                 Ok(page) => {
-                    if page.body.is_some() {
-                        if let Ok(_) = load_page(&page, buf, hist, false) {
-                            println!("{}", page.body.unwrap().len());
-                        }
+                    if page.body.is_some() && load_page(&page, buf, hist, false).is_ok() {
+                        println!("{}", page.body.unwrap().len());
                     }
                     return true;
                 }
@@ -114,15 +111,13 @@ pub async fn execute_command(
             if hist.curr_entry + depth >= hist.entry.len() - 1 {
                 hist.curr_entry = hist.entry.len() - 1;
             } else {
-                hist.curr_entry = hist.curr_entry + 1;
+                hist.curr_entry += 1;
             }
             let url: &url::Url = &hist.entry[hist.curr_entry];
             match go_url(&url).await {
                 Ok(page) => {
-                    if page.body.is_some() {
-                        if let Ok(_) = load_page(&page, buf, hist, false) {
-                            println!("{}", page.body.unwrap().len());
-                        }
+                    if page.body.is_some() && load_page(&page, buf, hist, false).is_ok() {
+                        println!("{}", page.body.unwrap().len());
                     }
                     return true;
                 }
@@ -195,13 +190,13 @@ pub async fn execute_command(
             return true;
         }
         ParseResponse::AddBookmark(name) => {
-            if !marks::add_bookmark(name, buf, marks).is_ok() {
+            if marks::add_bookmark(name, buf, marks).is_err() {
                 println!("FAILED TO ADD BOOKMARK"); // TEMP
             }
             return true;
         }
         ParseResponse::GoBookmark(name) => {
-            if !marks::go_to_bookmark(name, buf, hist, marks).await.is_ok() {
+            if marks::go_to_bookmark(name, buf, hist, marks).await.is_err() {
                 println!("UNABLE TO GO TO BOOKMARK"); // TEMP
             }
             return true;
@@ -213,7 +208,7 @@ pub async fn execute_command(
                 start: 0,
                 stop: 0,
             };
-            if let Ok(_) = print_with_args(&cmd, buf) {
+            if print_with_args(&cmd, buf).is_ok() {
                 return true;
             }
         }
@@ -311,7 +306,7 @@ pub fn load_page(
         if let Some(body) = &raw.body {
             buf.lines.clear();
             let mut link_count: usize = 0;
-            let mut lines = body.split("\n");
+            let mut lines = body.split('\n');
             buf.curr_line = 0;
             while let Some(line) = lines.next() {
                 if line.starts_with('#') {
