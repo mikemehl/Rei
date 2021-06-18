@@ -161,11 +161,8 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                         }
                     }
                     "m" => {
-                        if let Some(url) = &buf.url {
-                            if let Ok(url) = url::Url::parse(url.as_str()) {
-                                return Ok(ParseResponse::AddBookmark(arg.chars().nth(0).unwrap()));
-                            }
-                            Ok(ParseResponse::Invalid)
+                        if buf.url.is_some() {
+                            Ok(ParseResponse::AddBookmark(arg.chars().nth(0).unwrap()))
                         } else {
                             Ok(ParseResponse::Invalid)
                         }
@@ -178,7 +175,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
     } else if SEARCH_REGEX.is_match(&resp) {
         if let Some(re) = SEARCH_REGEX.captures(&resp) {
             if let Some(re) = re.get(1) {
-                if resp.starts_with("/") {
+                if resp.starts_with('/') {
                     return Ok(ParseResponse::SearchForwards(re.as_str().to_string()));
                 }
                 return Ok(ParseResponse::SearchBackwards(re.as_str().to_string()));
@@ -197,25 +194,23 @@ fn parse_num(num: &str, mut page_length: usize, curr_line: usize) -> usize {
         page_length - 1
     } else if num == "." {
         curr_line
-    } else if num.starts_with("+") {
-        if let Ok(offset) = num[1..].parse::<usize>() {
-            let dest = if curr_line + offset <= page_length - 1 {
+    } else if let Some(num) = num.strip_prefix('+') {
+        if let Ok(offset) = num.parse::<usize>() {
+            return if curr_line + offset <= page_length - 1 {
                 curr_line + offset
             } else {
                 page_length - 1
             };
-            dest
         } else {
             curr_line
         }
-    } else if num.starts_with("-") {
-        if let Ok(offset) = num[1..].parse::<usize>() {
-            let dest = if curr_line as isize - offset as isize >= 0 {
+    } else if let Some(num) = num.strip_prefix('-') {
+        if let Ok(offset) = num.parse::<usize>() {
+            return if curr_line as isize - offset as isize >= 0 {
                 curr_line - offset
             } else {
                 0
             };
-            dest
         } else {
             curr_line
         }
@@ -227,9 +222,8 @@ fn parse_num(num: &str, mut page_length: usize, curr_line: usize) -> usize {
 }
 
 fn parse_go_command(url: &str) -> StrResult<ParseResponse> {
-    let scheme_re = Regex::new(r"^gemini://").unwrap();
     let mut new_url = "gemini://".to_string();
-    if !scheme_re.is_match(&url) {
+    if !url.starts_with("gemini://") {
         new_url.push_str(url);
         if let Ok(url) = url::Url::parse(&new_url) {
             return Ok(ParseResponse::GoUrl(url));
@@ -238,9 +232,8 @@ fn parse_go_command(url: &str) -> StrResult<ParseResponse> {
         }
     } else if let Ok(url) = url::Url::parse(url) {
         return Ok(ParseResponse::GoUrl(url));
-    } else {
-        return Err("Unable to parse URL.");
     }
+    Err("Unable to parse URL.")
 }
 
 fn parse_link_command(id: &str) -> StrResult<ParseResponse> {
