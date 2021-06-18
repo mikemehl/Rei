@@ -23,7 +23,6 @@ pub async fn execute_command(
             Ok(page) => {
                 if page.body.is_some() {
                     let _ = load_page(&page, buf, hist, true);
-                    buf.url = Some(url);
                     println!("{}", page.body.unwrap().len());
                 }
                 return true;
@@ -343,6 +342,9 @@ pub fn load_page(
             }
             if add_to_hist {
                 hist.add(&raw.url);
+            }
+            if let Ok(new_url) = url::Url::parse(raw.url.as_str()) {
+                buf.url = Some(new_url);
             }
         }
     } else {
