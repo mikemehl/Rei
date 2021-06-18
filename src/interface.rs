@@ -7,7 +7,7 @@ pub fn prompt(buf: &PageBuf) -> StrResult<ParseResponse> {
     let _ = std::io::stdout().flush();
     let mut response = String::new();
     let _bytes_read = std::io::stdin().read_line(&mut response).unwrap();
-    return parse_response(response, buf);
+    parse_response(response, buf)
 }
 
 // Parse the users command.
@@ -39,7 +39,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
     } else if NUM_LETTER_REGEX.is_match(&resp) {
         if let Some(cmds) = NUM_LETTER_REGEX.captures(&resp) {
             if let (Some(num), Some(cmd)) = (cmds.get(1), cmds.get(2)) {
-                if num.as_str().starts_with("%") {
+                if num.as_str().starts_with('%') {
                     let cmd = cmd.as_str();
                     return Ok(match cmd {
                         "p" => ParseResponse::Print {
@@ -162,12 +162,24 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
                     }
                     "m" => {
                         if buf.url.is_some() {
-                            Ok(ParseResponse::AddBookmark(arg.chars().nth(0).unwrap()))
+                            if let Some(c) = arg.chars().next() {
+                                Ok(ParseResponse::AddBookmark(c))
+                            } else {
+                                Ok(ParseResponse::Invalid)
+                            }
                         } else {
                             Ok(ParseResponse::Invalid)
                         }
                     }
-                    "k" => Ok(ParseResponse::GoBookmark(arg.chars().nth(0).unwrap())),
+
+                    "k" => {
+                        if let Some(c) = arg.chars().next() {
+                            Ok(ParseResponse::GoBookmark(c))
+                        } else {
+                            Ok(ParseResponse::Invalid)
+                        }
+                    }
+
                     _ => Ok(ParseResponse::Invalid),
                 };
             }
@@ -183,7 +195,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
         }
     }
 
-    return Ok(ParseResponse::Invalid);
+    Ok(ParseResponse::Invalid)
 }
 
 fn parse_num(num: &str, mut page_length: usize, curr_line: usize) -> usize {
@@ -196,21 +208,21 @@ fn parse_num(num: &str, mut page_length: usize, curr_line: usize) -> usize {
         curr_line
     } else if let Some(num) = num.strip_prefix('+') {
         if let Ok(offset) = num.parse::<usize>() {
-            return if curr_line + offset <= page_length - 1 {
+            if curr_line + offset <= page_length - 1 {
                 curr_line + offset
             } else {
                 page_length - 1
-            };
+            }
         } else {
             curr_line
         }
     } else if let Some(num) = num.strip_prefix('-') {
         if let Ok(offset) = num.parse::<usize>() {
-            return if curr_line as isize - offset as isize >= 0 {
+            if curr_line as isize - offset as isize >= 0 {
                 curr_line - offset
             } else {
                 0
-            };
+            }
         } else {
             curr_line
         }

@@ -314,9 +314,9 @@ pub fn load_page(
             let mut lines = body.split("\n");
             buf.curr_line = 0;
             while let Some(line) = lines.next() {
-                if line.starts_with("#") {
+                if line.starts_with('#') {
                     if let Ok(parsed) = parse_gemtext_header(line) {
-                        if buf.lines.len() > 0 {
+                        if !buf.lines.is_empty() {
                             buf.lines.push(GemTextLine::Line("".to_string()));
                         }
                         buf.lines.push(parsed);
@@ -398,7 +398,7 @@ fn parse_gemtext_link(line: &str, id: &mut usize, curr_url: &url::Url) -> StrRes
             new_url = url_str.to_string();
         }
 
-        return new_url;
+        new_url
     }
 
     if LINK_REGEX.is_match(line) {

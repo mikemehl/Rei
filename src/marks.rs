@@ -20,8 +20,8 @@ pub fn load_marks() -> Bookmarks {
                 let mut split = line.split_whitespace();
                 let k = split.next();
                 let v = split.next();
-                if let (Some(k), Some(v)) = (k,v) {
-                    if let Some(k) = k.chars().nth(0) {
+                if let (Some(k), Some(v)) = (k, v) {
+                    if let Some(k) = k.chars().next() {
                         map.insert(k, v.to_string());
                     }
                 }
