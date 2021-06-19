@@ -17,7 +17,7 @@ fn parse_response(resp: String, buf: &PageBuf) -> StrResult<ParseResponse> {
             static ref NUM_REGEX : regex::Regex = Regex::new(r"^([\+-]+[0-9]+|[0-9]+|\$)\s*$").unwrap();                    // Number only
             static ref NUM_LETTER_REGEX : regex::Regex = Regex::new(r"^(%|[\+-]+[0-9]+|[0-9]+)([a-z]+)\s*$").unwrap();     // Number and letter
             static ref RANGE_LETTER : regex::Regex = Regex::new(r"^([\+-]+[0-9]+|[0-9]+|\.),([\+-]+[0-9]+|[0-9]+|\$|\.)([a-z]+)\s*$").unwrap();    // Range and letter
-            static ref LETTER_REGEX : regex::Regex = Regex::new(r"^([a-z\$]+)\s*$").unwrap();              // Letter only
+            static ref LETTER_REGEX : regex::Regex = Regex::new(r"^([a-z\$]{1})\s*$").unwrap();              // Letter only
             static ref LETTER_ARG_REGEX : regex::Regex = Regex::new(r"^([a-z])\s*([^\s]+)\s*$").unwrap(); // Letter and arg
             static ref SEARCH_REGEX : regex::Regex = Regex::new(r"^[/\?]{1}(.*)[/\?]{1}\n$").unwrap();
     }
